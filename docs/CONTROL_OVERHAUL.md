@@ -42,3 +42,5 @@ Live M5 pixel history isolated two additive passes after tone mapping. At the ac
 The packed normalized declaration retains its BGRA view for those two observed glow shaders. Other shader inputs keep the existing correction. Actual Metal tests exercise both glow paths and normalized/integer seed paths with red, yellow, green and blue. The diagnostic source-color budget increases from 64 to 128 unique declarations to include the late glow passes.
 
 The captured Wilcox/Selma signs use a blue/white BC1 atlas; decoding the actual guest texture shows the same blue background before material rendering. That scene does not establish a green-to-purple sign conversion. The road sun-specular calculation and nonzero height/specular texture remain present; equivalent sunset lighting/view conditions still need comparison.
+
+Installed M5 validation: the corrected gameplay frame shows a red signal glow and warm headlights; the user confirms the lights seem fixed. This validates the observed glow correction, with broader effect coverage still pending. The user continues to report street-sign color problems, which remain separate from this fix.
