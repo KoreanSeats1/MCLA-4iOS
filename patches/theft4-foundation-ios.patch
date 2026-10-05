@@ -1,0 +1,1061 @@
+diff --git a/glue/rexglue-sdk-main/include/rex/graphics/gta4_native/title_commands.h b/glue/rexglue-sdk-main/include/rex/graphics/gta4_native/title_commands.h
+index bfead6c..1a5f91e 100644
+--- a/glue/rexglue-sdk-main/include/rex/graphics/gta4_native/title_commands.h
++++ b/glue/rexglue-sdk-main/include/rex/graphics/gta4_native/title_commands.h
+@@ -10,7 +10,11 @@
+ 
+ namespace rex::graphics::gta4_native {
+ 
++#if MCLA_NATIVE_TITLE
++inline constexpr uint32_t kTitleId = 0x545407F8;
++#else
+ inline constexpr uint32_t kTitleId = 0x545407F2;
++#endif
+ inline constexpr uint32_t kTitleCommandAbi = 31;
+ inline constexpr uint32_t kGuestDeviceSize = 0x5780;
+ inline constexpr uint32_t kTextureStageCount = 26;
+diff --git a/glue/rexglue-sdk-main/include/rex/string/numeric.h b/glue/rexglue-sdk-main/include/rex/string/numeric.h
+index 8fb3d97..3053a11 100644
+--- a/glue/rexglue-sdk-main/include/rex/string/numeric.h
++++ b/glue/rexglue-sdk-main/include/rex/string/numeric.h
+@@ -11,7 +11,9 @@
+ #pragma once
+ 
+ #include <charconv>
++#include <cerrno>
+ #include <cstdint>
++#include <cstdlib>
+ #include <cstring>
+ #include <string>
+ #include <string_view>
+@@ -61,6 +63,42 @@ inline T from_string(const std::string_view value, bool force_hex = false) {
+ 
+ namespace detail {
+ 
++template <typename T>
++inline bool parse_floating(std::string_view range, T& result,
++                           size_t* consumed = nullptr) {
++#if REX_PLATFORM_IOS
++  // libc++ marks floating-point from_chars as iOS 26+, while ReXGlue supports
++  // older deployment targets. The C parsers are locale-compatible with the
++  // decimal syntax accepted by the CVAR/config layer and are available on all
++  // supported iOS versions.
++  std::string storage(range);
++  char* parse_end = nullptr;
++  errno = 0;
++  if constexpr (std::is_same_v<T, float>) {
++    result = std::strtof(storage.c_str(), &parse_end);
++  } else {
++    result = std::strtod(storage.c_str(), &parse_end);
++  }
++  if (parse_end == storage.c_str() || errno == ERANGE) {
++    return false;
++  }
++  if (consumed) {
++    *consumed = static_cast<size_t>(parse_end - storage.c_str());
++  }
++  return true;
++#else
++  auto parsed = std::from_chars(range.data(), range.data() + range.size(),
++                                result, std::chars_format::general);
++  if (parsed.ec != std::errc()) {
++    return false;
++  }
++  if (consumed) {
++    *consumed = static_cast<size_t>(parsed.ptr - range.data());
++  }
++  return true;
++#endif
++}
++
+ template <typename T, typename V = std::make_signed_t<T>>
+ inline T make_negative(T value) {
+   if constexpr (std::is_unsigned_v<T>) {
+@@ -133,10 +171,8 @@ inline T fpfs(const std::string_view value, bool force_hex) {
+     }
+     std::memcpy(&result, &pun, sizeof(PUN));
+   } else {
+-    auto [p, error] = std::from_chars(range.data(), range.data() + range.size(), result,
+-                                      std::chars_format::general);
+     // TODO(gibbed): do something more with errors?
+-    if (error != std::errc()) {
++    if (!parse_floating(range, result)) {
+       assert_always();
+       return T();
+     }
+@@ -253,12 +289,14 @@ inline vec128_t from_string<vec128_t>(const std::string_view value, bool force_h
+         assert_always();
+         return vec128_t();
+       }
+-      auto result = std::from_chars(p, end, v.f32[i], std::chars_format::general);
+-      if (result.ec != std::errc()) {
++      size_t consumed = 0;
++      if (!detail::parse_floating(
++              std::string_view(p, static_cast<size_t>(end - p)), v.f32[i],
++              &consumed)) {
+         assert_always();
+         return vec128_t();
+       }
+-      p = result.ptr;
++      p += consumed;
+     }
+   }
+   return v;
+diff --git a/glue/rexglue-sdk-main/resources/templates/codegen/init_h.inja b/glue/rexglue-sdk-main/resources/templates/codegen/init_h.inja
+index b876e86..5ea6554 100644
+--- a/glue/rexglue-sdk-main/resources/templates/codegen/init_h.inja
++++ b/glue/rexglue-sdk-main/resources/templates/codegen/init_h.inja
+@@ -45,6 +45,17 @@
+ #include <string_view>
+ #include <unordered_map>
+ 
++// Xenon db16cyc is a lightweight processor-delay hint used in guest spin
++// loops. Match Xenia's AArch64 behavior without invoking the host scheduler.
++#if defined(__aarch64__) && (defined(__clang__) || defined(__GNUC__))
++#define REX_DB16CYC() __asm__ volatile("yield")
++#elif (defined(__x86_64__) || defined(__i386__)) && \
++    (defined(__clang__) || defined(__GNUC__))
++#define REX_DB16CYC() __asm__ volatile("pause")
++#else
++#define REX_DB16CYC() ((void)0)
++#endif
++
+ //=============================================================================
+ // Image Info
+ //=============================================================================
+diff --git a/glue/rexglue-sdk-main/src/graphics/gta4_native/fire_escape_trace_native.inc b/glue/rexglue-sdk-main/src/graphics/gta4_native/fire_escape_trace_native.inc
+index 0c6c01f..bf7df6a 100644
+--- a/glue/rexglue-sdk-main/src/graphics/gta4_native/fire_escape_trace_native.inc
++++ b/glue/rexglue-sdk-main/src/graphics/gta4_native/fire_escape_trace_native.inc
+@@ -75,7 +75,11 @@ void Gta4NativeGraphicsSystem::TraceFireCommand(std::string_view point,const Nat
+   const auto* ps = p ? p->pixel_shader_resource : nullptr;
+   const auto* vs = p ? p->vertex_shader_resource : nullptr;
+   const bool draw = c.type == CommandType::kDrawIndexedPrimitive || c.type == CommandType::kDrawPrimitive || c.type == CommandType::kDrawPrimitiveUp;
+-  if (!c.fire_trace && draw && (!ps || !FireDownstreamShader(ps->filename))) return;
++  bool title_post_draw = false;
++#if MCLA_NATIVE_TITLE
++  title_post_draw = c.type == CommandType::kDrawPrimitiveUp;
++#endif
++  if (!c.fire_trace && !title_post_draw && draw && (!ps || !FireDownstreamShader(ps->filename))) return;
+   const FireTraceContext empty; const auto& x = c.fire_trace ? *c.fire_trace : empty;
+   const auto& f = c.fixed_function_state;
+   DrawIndexedPrimitiveCommand d{};
+@@ -108,6 +112,19 @@ bool Gta4NativeGraphicsSystem::SelectFireCheckpoint(const NativeCommand& c, cons
+   if (!fire_images_ || !c.pipeline_state || !c.pipeline_state->pixel_shader_resource) return false;
+   if (c.type != CommandType::kDrawIndexedPrimitive && c.type != CommandType::kDrawPrimitive && c.type != CommandType::kDrawPrimitiveUp) return false;
+   std::string key;
++#if MCLA_NATIVE_TITLE
++  if (c.type == CommandType::kDrawPrimitiveUp && target.width == 1280 && target.height == 720 &&
++      c.bytes.size() >= sizeof(DrawPrimitiveUpCommand)) {
++    DrawPrimitiveUpCommand draw{};
++    std::memcpy(&draw, c.bytes.data(), sizeof(draw));
++    // Full-screen rectangle expansion: capture the native pre/post image
++    // without changing the draw. Existing frame and disk budgets still apply.
++    if (draw.vertex_count == 3 && draw.primitive_type == 8) {
++      key = "mcla-post-" + std::to_string(c.pipeline_state->pixel_shader_resource->hash);
++      return fire_checkpoints_[key]++ == 0;
++    }
++  }
++#endif
+   if (c.fire_trace) key = target.is_reflection ? "fire-reflection" : "fire-" + std::to_string(c.fire_trace->bucket);
+   else {
+     const std::string_view name=c.pipeline_state->pixel_shader_resource->filename;
+diff --git a/glue/rexglue-sdk-main/src/graphics/gta4_native/graphics_system.cpp b/glue/rexglue-sdk-main/src/graphics/gta4_native/graphics_system.cpp
+index 9cbd874..48089e6 100644
+--- a/glue/rexglue-sdk-main/src/graphics/gta4_native/graphics_system.cpp
++++ b/glue/rexglue-sdk-main/src/graphics/gta4_native/graphics_system.cpp
+@@ -1,4 +1,7 @@
+ #include "graphics_system.h"
++#ifndef MCLA_NATIVE_TITLE
++#define MCLA_NATIVE_TITLE 0
++#endif
+ #include "native_cpu_profile_scope.h"
+ #include "native_profile_shader_category.h"
+ #include "modern_shader_options.h"
+@@ -70,6 +73,11 @@
+ 
+ #include <shader/shader_cache.h>
+ #include <shader_overrides/shader_override_cache.h>
++#if MCLA_NATIVE_TITLE
++#include "MCLANativeRenderer.h"
++#include "MCLANativeGpuCompatibility.h"
++#include "MCLAQuadVertexFetch.h"
++#endif
+ 
+ #include "../shaders/vulkan_spirv/fullscreen_cw_vs.h"
+ #include "depth_handoff_ps.h"
+@@ -343,8 +351,14 @@ namespace transition = rex::diagnostics::gta4_transition;
+ namespace gpu_flight = rex::diagnostics::gpu_flight;
+ 
+ bool IsNativeFlightVerboseLoggingEnabled() {
++#if MCLA_NATIVE_TITLE
++  // Keep bounded frame summaries; per-resource flight output rotates away the
++  // startup evidence in seconds on the mobile port.
++  return false;
++#else
+   return rex::diagnostics::IsEnabled(rex::diagnostics::Category::kNativeTrace) ||
+          rex::diagnostics::IsEnabled(rex::diagnostics::Category::kVulkan);
++#endif
+ }
+ 
+ bool IsDeferredLightShaderFilename(std::string_view filename) {
+@@ -1174,7 +1188,7 @@ class NativeSubmissionCompletion final
+ };
+ 
+ uint64_t NextNativeTraceDiagnosticCount(std::atomic<uint64_t>& counter) {
+-  if (!rex::diagnostics::IsEnabled(rex::diagnostics::Category::kNativeTrace)) {
++  if (!MCLA_NATIVE_TITLE && !rex::diagnostics::IsEnabled(rex::diagnostics::Category::kNativeTrace)) {
+     return UINT64_MAX;
+   }
+   return counter.fetch_add(1, std::memory_order_relaxed) + 1;
+@@ -1334,7 +1348,7 @@ constexpr uint32_t kVectorFontAtlasExtentMinusOne = 2047;
+ // prefiltered coverage levels to reach the stock resolution and to handle the
+ // smaller HUD/subtitle draws without undersampling the full-resolution alpha.
+ constexpr uint32_t kVectorFontMipLevelCount = 5;
+-constexpr uint32_t kCompletedFrameOffset = 16552;
++constexpr uint32_t kCompletedFrameOffset = MCLA_NATIVE_TITLE ? 16568 : 16552;
+ constexpr size_t kMaximumQueuedCommands = 65536;
+ // Heavy GTA IV frames contain thousands of large NativeCommand objects. Keep
+ // their stable frame storage off the allocation hot path and amortize the
+@@ -1396,7 +1410,9 @@ constexpr uint32_t kPixelConstantsOffset = 0x1780;
+ // 0xE00 / 64 = 56 PS groups, so PS occupies dirty-word bits 63 through 8.
+ constexpr uint32_t kNativeConstantGroupBytes = 64;
+ constexpr std::array<DirtyBitSpan, 1> kVertexConstantDirtySpans{{{0, 0, 64, 0, true}}};
+-constexpr std::array<DirtyBitSpan, 1> kPixelConstantDirtySpans{{{1, 8, 56, 0, true}}};
++constexpr uint32_t kPixelConstantGroups = MCLA_NATIVE_TITLE ? 64 : 56;
++constexpr std::array<DirtyBitSpan, 1> kPixelConstantDirtySpans{{
++    {1, 64 - kPixelConstantGroups, kPixelConstantGroups, 0, true}}};
+ constexpr std::array<DirtyBitSpan, 1> kBooleanConstantDirtySpans{{{4, 56, 1, 0}}};
+ constexpr size_t kDofProjectionSnapshotOffset = 0x2490;
+ constexpr size_t kDofDistanceSnapshotOffset = 0x24A0;
+@@ -1405,7 +1421,10 @@ constexpr uint32_t kSplitPostFxCombinedDescriptorCount = 16;
+ constexpr uint32_t kSplitPostFxDescriptorSetCount = 4;
+ constexpr uint32_t kSunShaftCombinedDescriptorCount = 12;
+ constexpr uint32_t kSunShaftDescriptorSetCount = 4;
+-constexpr uint32_t kPixelConstantsSize = 0xE00;
++// MCLA's generated draw builders flush all 256 PS registers at dev+6016.
++// Its downsample shader reads c255; inheriting GTA IV's 224-register bank
++// silently zeros that multiplier and the entire post-processing chain.
++constexpr uint32_t kPixelConstantsSize = kPixelConstantGroups * kNativeConstantGroupBytes;
+ // Python verification: VS, PS, and shared blocks are respectively 4,096,
+ // 3,584, and 864 bytes, all exact multiples of the 16-byte BDA alignment.
+ // A draw with three unique versions therefore reserves exactly 8,544 bytes.
+@@ -1416,7 +1435,7 @@ constexpr VkDeviceSize kNativeConstantArenaGrowthGranularity = 0x10000;
+ constexpr DirtyStateLayout NativeConstantDirtyLayout() {
+   DirtyStateLayout layout{};
+   layout.vertex_constants = {kVertexConstantDirtySpans, 64};
+-  layout.pixel_constants = {kPixelConstantDirtySpans, 56};
++  layout.pixel_constants = {kPixelConstantDirtySpans, kPixelConstantGroups};
+   layout.boolean_constants = {kBooleanConstantDirtySpans, 1};
+   return layout;
+ }
+@@ -2579,6 +2598,10 @@ VkColorComponentFlags ConvertColorWriteMask(uint32_t mask) {
+ }
+ 
+ VkFormat ConvertTextureFormat(xenos::TextureFormat format) {
++#if MCLA_NATIVE_TITLE
++  const VkFormat depth_format = mcla::native::DepthTextureFormat(uint32_t(GetBaseFormat(format)));
++  if (depth_format != VK_FORMAT_UNDEFINED) return depth_format;
++#endif
+   switch (GetBaseFormat(format)) {
+     case xenos::TextureFormat::k_8:
+       return VK_FORMAT_R8_UNORM;
+@@ -2727,6 +2750,10 @@ xenos::MsaaSamples ConvertHostSamplesToGuestSamples(VkSampleCountFlagBits sample
+ }
+ 
+ VkFormat ConvertSurfaceFormat(uint32_t raw_format, bool depth) {
++#if MCLA_NATIVE_TITLE
++  const VkFormat additional = mcla::native::AdditionalSurfaceFormat(raw_format, depth);
++  if (additional != VK_FORMAT_UNDEFINED) return additional;
++#endif
+   if (depth) {
+     switch (raw_format) {
+       case kD3dFmtD24FS8:
+@@ -3247,6 +3274,9 @@ void Gta4NativeGraphicsSystem::StageNativeSurfaceFlightResources(const NativeSur
+   StageNativeFlightResource(NativeFlightResourceKind::kSurfaceSampledView,
+                             NativeVulkanHandleIdentity(image.sampled_view), image.descriptor.handle,
+                             image.materialized_serial);
++  StageNativeFlightResource(NativeFlightResourceKind::kSurfaceSampledView,
++                            NativeVulkanHandleIdentity(image.sampled_stencil_view),
++                            image.descriptor.handle, image.materialized_serial);
+   StageNativeFlightResource(NativeFlightResourceKind::kSurfaceScratchBuffer,
+                             NativeVulkanHandleIdentity(image.depth_handoff_stencil_scratch_buffer),
+                             image.descriptor.handle, image.materialized_serial);
+@@ -4384,6 +4414,9 @@ bool Gta4NativeGraphicsSystem::ValidateAndCopyCommand(const void* command, size_
+     if (!device_memory) {
+       return reject(header.type, "device-state-translation");
+     }
++#if MCLA_NATIVE_TITLE
++    device_memory = MCLANativeCanonicalDevice(device_memory);
++#endif
+     const std::span<const uint8_t> device_state(device_memory, kGuestDeviceSize);
+     const std::string state_transport = REXCVAR_GET(gta4_native_state_transport);
+     const bool compare_transport = state_transport == "compare";
+@@ -4534,6 +4567,9 @@ bool Gta4NativeGraphicsSystem::ValidateAndCopyCommand(const void* command, size_
+     if (!device_memory) {
+       return reject(header.type, "vertex-state-translation");
+     }
++#if MCLA_NATIVE_TITLE
++    device_memory = MCLANativeCanonicalDevice(device_memory);
++#endif
+     const std::span<const uint8_t> device_state(device_memory, kGuestDeviceSize);
+     for (uint32_t stream = 0; stream < kVertexStreamCount; ++stream) {
+       const uint32_t handle =
+@@ -4579,6 +4615,9 @@ bool Gta4NativeGraphicsSystem::ValidateAndCopyCommand(const void* command, size_
+     if (!device_memory) {
+       return reject(header.type, "texture-state-translation");
+     }
++#if MCLA_NATIVE_TITLE
++    device_memory = MCLANativeCanonicalDevice(device_memory);
++#endif
+     const std::span<const uint8_t> device_state(device_memory, kGuestDeviceSize);
+     for (uint32_t stage = 0; stage < kShaderTextureCount; ++stage) {
+       if (!(native_command.used_texture_mask & (uint32_t{1} << stage))) {
+@@ -4889,6 +4928,9 @@ SurfaceDescriptor Gta4NativeGraphicsSystem::CaptureSurfaceDescriptor(uint32_t ha
+   descriptor.width = (std::rotl(descriptor.packed_dimensions, 14) & 0x3FFF) + 1;
+   descriptor.height = (std::rotl(descriptor.packed_dimensions, 29) & 0x7FFF) + 1;
+   descriptor.sample_type = DecodeSurfaceSampleType(descriptor.base);
++#if MCLA_NATIVE_TITLE
++  MCLANativeCanonicalSurface(descriptor);
++#endif
+   return descriptor;
+ }
+ 
+@@ -6524,9 +6566,16 @@ bool Gta4NativeGraphicsSystem::InitializeShaderCache() {
+   }
+ 
+   shader_cache_data_.resize(g_spirvCacheDecompressedSize);
++#if MCLA_NATIVE_TITLE
++  // MCLA's generated cache contains validator-checked raw SPIR-V.
++  std::memcpy(shader_cache_data_.data(), g_compressedSpirvCache,
++              g_spirvCacheDecompressedSize);
++  const size_t decompressed_size = g_spirvCacheDecompressedSize;
++#else
+   const size_t decompressed_size =
+       ZSTD_decompress(shader_cache_data_.data(), shader_cache_data_.size(), g_compressedSpirvCache,
+                       g_spirvCacheCompressedSize);
++#endif
+   if (ZSTD_isError(decompressed_size) || decompressed_size != g_spirvCacheDecompressedSize) {
+     REXLOG_ERROR(
+         "gta4-native: failed to decompress Liberty SPIR-V shader cache: {}",
+@@ -6665,7 +6714,7 @@ bool Gta4NativeGraphicsSystem::ReflectVertexInputs(const std::vector<uint32_t>&
+     if (!component_count || component_count > 4) {
+       return false;
+     }
+-    inputs.push_back({locations[variable.id], numeric_type, component_count});
++    inputs.push_back({locations[variable.id], numeric_type, component_count, locations[variable.id]});
+   }
+ 
+   std::sort(inputs.begin(), inputs.end(),
+@@ -6832,6 +6881,13 @@ void Gta4NativeGraphicsSystem::RegisterShader(const RegisterShaderCommand& comma
+         return false;
+       }
+       const uint8_t* smolv_data = shader_cache_data_.data() + offset;
++#if MCLA_NATIVE_TITLE
++      if (size % 4) return false;
++      decoded_size = size;
++      decoded.resize(size / 4);
++      std::memcpy(decoded.data(), smolv_data, size);
++      return decoded.front() == kSpirvMagic;
++#else
+       decoded_size = smolv::GetDecodedBufferSize(smolv_data, size);
+       if (!decoded_size || decoded_size % sizeof(uint32_t)) {
+         REXLOG_ERROR("gta4-native: invalid decoded {} SPIR-V size for cache entry {}", variant,
+@@ -6845,6 +6901,7 @@ void Gta4NativeGraphicsSystem::RegisterShader(const RegisterShaderCommand& comma
+         return false;
+       }
+       return true;
++#endif
+     };
+ 
+     std::vector<uint32_t> stock_early_spirv;
+@@ -6922,6 +6979,25 @@ void Gta4NativeGraphicsSystem::RegisterShader(const RegisterShaderCommand& comma
+         stock_late_spirv_size = stock_late_spirv.size() * sizeof(uint32_t);
+       }
+     }
++    std::vector<NativeVertexInput> stock_vertex_inputs;
++    if (command.stage == ShaderStage::kVertex) {
++      if (!ReflectVertexInputs(stock_early_spirv, stock_vertex_inputs)) {
++        REXLOG_ERROR("gta4-native: failed to reflect stock vertex inputs for shader {}", cache_entry->filename);
++        return;
++      }
++#if MCLA_NATIVE_TITLE
++      const auto mapping = mcla::native::CompactVertexLocations(
++          stock_early_spirv, vulkan_device->properties().maxVertexInputAttributes);
++      if (!mapping || mapping->size() != stock_vertex_inputs.size()) {
++        REXLOG_ERROR("MCLA native vertex input compaction failed shader={}", cache_entry->filename);
++        return;
++      }
++      for (size_t i = 0; i < mapping->size(); ++i) {
++        if ((*mapping)[i].semantic != stock_vertex_inputs[i].location) return;
++        stock_vertex_inputs[i].native_location = (*mapping)[i].native;
++      }
++#endif
++    }
+     VkShaderModule stock_early_module = ui::vulkan::util::CreateShaderModule(
+         vulkan_device, stock_early_spirv.data(), stock_early_spirv_size);
+     if (!stock_early_module) {
+@@ -6953,16 +7029,7 @@ void Gta4NativeGraphicsSystem::RegisterShader(const RegisterShaderCommand& comma
+     resource->filename.assign(cache_entry->filename,
+                               ::strnlen(cache_entry->filename, sizeof(cache_entry->filename)));
+ 
+-    if (command.stage == ShaderStage::kVertex &&
+-        !ReflectVertexInputs(stock_early_spirv, resource->vertex_inputs)) {
+-      if (stock_late_module) {
+-        profile::CpuCall(profile::CpuOp::kDriverDestruction, [&] { return dfn.vkDestroyShaderModule(device, stock_late_module, nullptr); });
+-      }
+-      profile::CpuCall(profile::CpuOp::kDriverDestruction, [&] { return dfn.vkDestroyShaderModule(device, stock_early_module, nullptr); });
+-      REXLOG_ERROR("gta4-native: failed to reflect stock vertex inputs for shader {}",
+-                   cache_entry->filename);
+-      return;
+-    }
++    resource->vertex_inputs = std::move(stock_vertex_inputs);
+ 
+     if (override_entry) {
+       const char* override_rejection = nullptr;
+@@ -17673,6 +17740,13 @@ void Gta4NativeGraphicsSystem::DestroyNativeSurfaceImage(NativeSurfaceImage& ima
+                               NativeVulkanHandleIdentity(image.sampled_view));
+     profile::CpuCall(profile::CpuOp::kDriverDestruction, [&] { return dfn.vkDestroyImageView(device, image.sampled_view, nullptr); });
+   }
++  if (image.sampled_stencil_view) {
++    TraceNativeFlightMutation("destroy", NativeFlightResourceKind::kSurfaceSampledView,
++                              NativeVulkanHandleIdentity(image.sampled_stencil_view));
++    profile::CpuCall(profile::CpuOp::kDriverDestruction, [&] {
++      dfn.vkDestroyImageView(device, image.sampled_stencil_view, nullptr);
++    });
++  }
+   if (image.resource.view) {
+     TraceNativeFlightMutation("destroy", NativeFlightResourceKind::kSurfaceView,
+                               NativeVulkanHandleIdentity(image.resource.view));
+@@ -18052,8 +18126,9 @@ bool Gta4NativeGraphicsSystem::ResolveRenderingTarget(const NativeCommand& comma
+   const uint32_t requested_colors = usage.color_attachment_mask;
+   const bool requested_depth = usage.depth_stencil_aspects != 0;
+   auto reject = [this, &state, &target, presenter_view, presenter_width,
+-                 presenter_height](const char* reason) {
+-    if (!rex::diagnostics::IsEnabled(rex::diagnostics::Category::kNativeTrace) &&
++                 presenter_height, allow_allocation](const char* reason) {
++    if (!allow_allocation) return false;  // A prewarm cache miss is not a draw rejection.
++    if (!MCLA_NATIVE_TITLE && !rex::diagnostics::IsEnabled(rex::diagnostics::Category::kNativeTrace) &&
+         !rex::diagnostics::IsEnabled(rex::diagnostics::Category::kNativeProbes)) {
+       return false;
+     }
+@@ -18233,6 +18308,15 @@ bool Gta4NativeGraphicsSystem::ResolveRenderingTarget(const NativeCommand& comma
+       target.logical_height = target.depth_surface->logical_height;
+       target.reflection = target.depth_surface->reflection;
+       target.is_reflection = target.depth_surface->is_reflection;
++    } else if (MCLA_NATIVE_TITLE && !target.is_reflection &&
++               !target.depth_surface->is_reflection &&
++               target.width == target.logical_width && target.height == target.logical_height &&
++               target.depth_surface->width == target.depth_surface->logical_width &&
++               target.depth_surface->height == target.depth_surface->logical_height &&
++               target.depth_surface->width >= target.width &&
++               target.depth_surface->height >= target.height) {
++      // The title shares a larger depth attachment between small color targets.
++      // Vulkan permits this: keep the render area within the smaller color image.
+     } else if (target.width != target.depth_surface->width ||
+                target.height != target.depth_surface->height) {
+       return reject("depth-size-mismatch");
+@@ -18901,7 +18985,7 @@ VkPipeline Gta4NativeGraphicsSystem::GetOrCreatePipeline(
+   }
+   attributes.reserve(state.vertex_shader_resource->vertex_inputs.size());
+   for (const NativeVertexInput& shader_input : state.vertex_shader_resource->vertex_inputs) {
+-    if (shader_input.location >= vertex_limits.maxVertexInputAttributes) {
++    if (shader_input.native_location >= vertex_limits.maxVertexInputAttributes) {
+       return reject("vertex-input-location-limit");
+     }
+     const VertexElement* matching_element = nullptr;
+@@ -18914,7 +18998,7 @@ VkPipeline Gta4NativeGraphicsSystem::GetOrCreatePipeline(
+     }
+ 
+     VkVertexInputAttributeDescription attribute{};
+-    attribute.location = shader_input.location;
++    attribute.location = shader_input.native_location;
+     if (!matching_element) {
+       attribute.binding = kDefaultVertexBinding;
+       attribute.format =
+@@ -18945,6 +19029,11 @@ VkPipeline Gta4NativeGraphicsSystem::GetOrCreatePipeline(
+     attribute.binding = stream;
+     attribute.format = GetCompatibleVertexFormat(matching_element->type, shader_input.numeric_type);
+     attribute.offset = matching_element->offset;
++#if MCLA_NATIVE_TITLE
++    attribute.format = mcla::native::InlineTexcoordFormat(user_pointer,
++        matching_element->usage, attribute.format, attribute.offset,
++        key.vertex_strides[stream], shader_input.component_count);
++#endif
+     if (attribute.format == VK_FORMAT_UNDEFINED) {
+       static std::atomic<uint64_t> vertex_format_rejection_count{0};
+       const uint64_t count = ++vertex_format_rejection_count;
+@@ -19447,6 +19536,14 @@ bool Gta4NativeGraphicsSystem::UploadBufferResource(
+     conversions = ConvertGuestVertexPayload(
+         candidate.payload.data(), resource->payload.data(), resource->payload.size(), declaration,
+         shader, vertex_stream, stream_state.offset, stream_state.stride);
++#if MCLA_NATIVE_TITLE
++    if (mcla::native::QuadFetchScaleWord(shader.hash)) {
++      auto expanded = mcla::native::ExpandQuadFetchPayload(
++          candidate.payload, stream_state.offset, stream_state.stride);
++      if (!expanded) return false;
++      candidate.payload = std::move(*expanded);
++    }
++#endif
+     resource->converted_vertex_payloads.push_back(std::move(candidate));
+     converted_payload = &resource->converted_vertex_payloads.back();
+     RecordNativeMemoryLifecycle(
+@@ -19471,7 +19568,7 @@ bool Gta4NativeGraphicsSystem::UploadBufferResource(
+   if (!GetOrCreatePersistentBuffer(
+           command_buffer, resource, persistent_key, converted_payload->payload.data(),
+           VkDeviceSize(converted_payload->payload.size()), NativeUploadKind::kVertex, allocation)) {
+-    if (!AllocateUpload(resource->payload.size(), kNativePersistentBufferAlignment, allocation,
++    if (!AllocateUpload(converted_payload->payload.size(), kNativePersistentBufferAlignment, allocation,
+                         NativeUploadKind::kVertex)) {
+       return false;
+     }
+@@ -20440,6 +20537,20 @@ bool Gta4NativeGraphicsSystem::RecordPrimitive(VkCommandBuffer command_buffer,
+     return fail("zero-count");
+   }
+ 
++#if MCLA_NATIVE_TITLE
++  if (!command.pipeline_state->vertex_shader_resource) return fail("vertex-shader");
++  const auto quad_scale_word = mcla::native::QuadFetchScaleWord(
++      command.pipeline_state->vertex_shader_resource->hash);
++  const bool folded_quad_fetch = quad_scale_word.has_value();
++  if (folded_quad_fetch &&
++      (draw.primitive_type != uint32_t(xenos::PrimitiveType::kQuadList) ||
++       draw.start_vertex % 4 || draw.vertex_count % 4 ||
++       LoadGuestWord(command.device_snapshot, kVertexConstantsOffset + *quad_scale_word * 4) !=
++           0x3E800000u)) { // The audited shader index scale must actually be 0.25.
++    return fail("quad-fetch-contract");
++  }
++#endif
++
+   VkPipeline pipeline = GetOrCreateDrawPipeline(command, draw.primitive_type, target);
+   if (!pipeline) {
+     return fail("pipeline");
+@@ -20481,9 +20592,26 @@ bool Gta4NativeGraphicsSystem::RecordPrimitive(VkCommandBuffer command_buffer,
+       return fail("vertex-stream-resource");
+     }
+     const uint64_t vertex_end = uint64_t(draw.start_vertex) + uint64_t(draw.vertex_count);
+-    const uint64_t required_size =
++    uint64_t required_size =
+         uint64_t(stream_state.offset) + vertex_end * uint64_t(stream_state.stride);
++#if MCLA_NATIVE_TITLE
++    if (folded_quad_fetch) {
++      required_size = mcla::native::QuadFetchRequiredBytes(
++          stream_state.offset, stream_state.stride, draw.start_vertex, draw.vertex_count);
++    }
++#endif
+     if (required_size > resource->payload.size()) {
++#if MCLA_NATIVE_TITLE
++      static uint32_t bounds_logged = 0;
++      if (bounds_logged++ < 16) {
++        REXLOG_WARN("MCLA vertex bounds frame={} cmd={} stream={} buffer={:08X} "
++                    "stride={} offset={} start={} count={} required={} size={} vs={:016X}",
++                    diagnostic_submitted_frame_, diagnostic_command_index_, stream,
++                    stream_state.buffer, stream_state.stride, stream_state.offset,
++                    draw.start_vertex, draw.vertex_count, required_size, resource->payload.size(),
++                    command.pipeline_state->vertex_shader_resource->hash);
++      }
++#endif
+       return fail("vertex-stream-bounds");
+     }
+     NativeUploadAllocation stream_allocation;
+@@ -20500,6 +20628,15 @@ bool Gta4NativeGraphicsSystem::RecordPrimitive(VkCommandBuffer command_buffer,
+     if (draw.vertex_count % 4) {
+       return fail("quad-list-count");
+     }
++#if MCLA_NATIVE_TITLE
++    if (folded_quad_fetch) {
++      static uint32_t folded_logged = 0;
++      if (folded_logged++ < 12)
++        REXLOG_INFO("MCLA folded quad fetch vs={:016X} start={} vertices={} source-first={}",
++                    command.pipeline_state->vertex_shader_resource->hash,
++                    draw.start_vertex, draw.vertex_count, draw.start_vertex / 4);
++    }
++#endif
+     const uint32_t index_count = GetQuadListTriangleListIndexCount(draw.vertex_count);
+     NativeUploadAllocation indices_allocation;
+     const VkDeviceSize index_size = VkDeviceSize(index_count) * sizeof(uint32_t);
+@@ -21666,6 +21803,117 @@ bool Gta4NativeGraphicsSystem::RecordPackedDepthAlias(
+   return true;
+ }
+ 
++bool Gta4NativeGraphicsSystem::RecordPackedDepthSurfaceResolve(
++    VkCommandBuffer command_buffer, NativeSurfaceImage& source,
++    NativeTextureImage& destination, const VkRect2D& rectangle, bool float24) {
++  constexpr VkImageAspectFlags aspects = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
++  // The existing Theft4 packing shader indexes absolute pixel coordinates.
++  // Caller guarantees identical source/destination origins and no scaling.
++  if (source.aspect != aspects || !source.aspect_content.Has(aspects) ||
++      source.samples != VK_SAMPLE_COUNT_1_BIT || !source.sampled_view ||
++      destination.format != VK_FORMAT_R8G8B8A8_UNORM ||
++      destination.aspect != VK_IMAGE_ASPECT_COLOR_BIT || !frame_descriptor_pool_) return false;
++  auto* provider = static_cast<ui::vulkan::VulkanProvider*>(provider_.get());
++  const auto* device = provider->vulkan_device();
++  const auto& dfn = device->functions();
++  if (!source.sampled_stencil_view) {
++    VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
++    view.image = source.resource.image;
++    view.viewType = VK_IMAGE_VIEW_TYPE_2D;
++    view.format = source.format;
++    view.subresourceRange = ui::vulkan::util::InitializeSubresourceRange(
++        VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1);
++    if (dfn.vkCreateImageView(device->device(), &view, nullptr,
++                            &source.sampled_stencil_view) != VK_SUCCESS) return false;
++  }
++  MarkNativeSurfaceImageUsed(source);
++  StageNativeTextureFlightResources(destination);
++  const auto target_view = GetOrCreateTextureMipView(destination, 0);
++  const auto pipeline = GetOrCreateFullscreenPipeline(
++      destination.format, NativeResolveConversionPipeline::Kind::kPackedDepthAlias);
++  if (!target_view || !pipeline) return false;
++  VkDescriptorSet descriptor = VK_NULL_HANDLE;
++  VkDescriptorSetAllocateInfo allocation{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
++  allocation.descriptorPool = frame_descriptor_pool_;
++  allocation.descriptorSetCount = 1;
++  allocation.pSetLayouts = &resolve_conversion_descriptor_set_layout_;
++  if (dfn.vkAllocateDescriptorSets(device->device(), &allocation, &descriptor) != VK_SUCCESS)
++    return false;
++  std::array<VkDescriptorImageInfo, 2> images{};
++  images[0].imageView = source.sampled_view;
++  images[1].imageView = source.sampled_stencil_view;
++  std::array<VkWriteDescriptorSet, 2> writes{};
++  for (uint32_t i = 0; i < writes.size(); ++i) {
++    images[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++    writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
++    writes[i].dstSet = descriptor;
++    writes[i].dstBinding = i;
++    writes[i].descriptorCount = 1;
++    writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
++    writes[i].pImageInfo = &images[i];
++  }
++  dfn.vkUpdateDescriptorSets(device->device(), uint32_t(writes.size()), writes.data(), 0, nullptr);
++  std::array<VkImageMemoryBarrier, 2> barriers{};
++  for (auto& barrier : barriers) {
++    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
++    barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
++    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++  }
++  barriers[0].image = source.resource.image;
++  barriers[0].oldLayout = source.layout;
++  barriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++  barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
++  barriers[0].subresourceRange = ui::vulkan::util::InitializeSubresourceRange(aspects, 0, 1, 0, 1);
++  barriers[1].image = destination.resource.image;
++  barriers[1].oldLayout = destination.layout;
++  barriers[1].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
++  barriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
++  barriers[1].subresourceRange = ui::vulkan::util::InitializeSubresourceRange(destination.aspect, 0, 1, 0, 1);
++  dfn.vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
++      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
++      0, 0, nullptr, 0, nullptr, uint32_t(barriers.size()), barriers.data());
++  VkRenderingAttachmentInfo attachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
++  attachment.imageView = target_view;
++  attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
++  // Partial tile writes must preserve the other tiles in the destination.
++  attachment.loadOp = destination.content.defined ? VK_ATTACHMENT_LOAD_OP_LOAD
++                                                 : VK_ATTACHMENT_LOAD_OP_CLEAR;
++  attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
++  VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
++  rendering.renderArea.extent = {destination.width, destination.height};
++  rendering.layerCount = 1;
++  rendering.colorAttachmentCount = 1;
++  rendering.pColorAttachments = &attachment;
++  dfn.vkCmdBeginRendering(command_buffer, &rendering);
++  const VkViewport viewport{0, 0, float(destination.width), float(destination.height), 0, 1};
++  dfn.vkCmdSetViewport(command_buffer, 0, 1, &viewport);
++  dfn.vkCmdSetScissor(command_buffer, 0, 1, &rectangle);
++  dfn.vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
++  dfn.vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
++      resolve_conversion_pipeline_layout_, 0, 1, &descriptor, 0, nullptr);
++  native_draw_state_cache_.Reset();
++  NativeResolveConversionConstants constants{};
++  constants.mode = float24;
++  // Store raw packed bytes. The ordinary texture fetch applies its own swizzle;
++  // unlike a packed-depth alias, it does NOT have an identity sampling override.
++  constants.flags = 0x688;  // xyzw, one 3-bit selector per channel.
++  dfn.vkCmdPushConstants(command_buffer, resolve_conversion_pipeline_layout_,
++      VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(constants), &constants);
++  dfn.vkCmdDraw(command_buffer, 3, 1, 0, 0);
++  dfn.vkCmdEndRendering(command_buffer);
++  auto& ready = barriers[1];
++  ready.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
++  ready.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
++  ready.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
++  ready.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++  dfn.vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
++      VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
++      0, 0, nullptr, 0, nullptr, 1, &ready);
++  source.layout = destination.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
++  return true;
++}
++
+ bool Gta4NativeGraphicsSystem::RefreshPackedDepthAliases(
+     VkCommandBuffer command_buffer, uint64_t source_generation) {
+   const profile::CpuScope profile_scope(profile::CpuOp::kPackedDepth);
+@@ -22710,6 +22958,76 @@ bool Gta4NativeGraphicsSystem::RecordSurfaceMaterialization(
+     VkCommandBuffer command_buffer, const NativePlacementOwner& owner,
+     NativeSurfaceImage& destination, const GuestSurfaceView& destination_view) {
+   NativeSurfaceImage* source = owner.image;
++#if MCLA_NATIVE_TITLE
++  constexpr VkImageAspectFlags depth_stencil =
++      VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
++  if (source && source != &destination && !source->is_reflection &&
++      !destination.is_reflection && source->aspect == depth_stencil &&
++      destination.aspect == depth_stencil && source->ever_written &&
++      source->aspect_content.Has(depth_stencil) &&
++      GetGuestPlacementKey(owner.view) == GetGuestPlacementKey(destination_view) &&
++      mcla::native::CanCopyDepthPlacement(source->format, destination.format,
++          source->width, source->height, destination.width, destination.height,
++          source->samples, destination.samples)) {
++    // MCLA has distinct surface wrappers for the same shadow-depth placement.
++    // Carry BOTH planes and their provenance across, not an implicit clear.
++    MarkNativeSurfaceImageUsed(*source);
++    MarkNativeSurfaceImageUsed(destination);
++    auto* provider = static_cast<ui::vulkan::VulkanProvider*>(provider_.get());
++    const auto& dfn = provider->vulkan_device()->functions();
++    const auto source_sync = ImageLayoutSynchronization(source->layout, source->aspect);
++    const auto destination_sync = ImageLayoutSynchronization(destination.layout, destination.aspect);
++    std::array<VkImageMemoryBarrier, 2> barriers{};
++    for (auto& barrier : barriers) {
++      barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
++      barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++      barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
++      barrier.subresourceRange =
++          ui::vulkan::util::InitializeSubresourceRange(depth_stencil, 0, 1, 0, 1);
++    }
++    barriers[0].image = source->resource.image;
++    barriers[0].srcAccessMask = source_sync.access;
++    barriers[0].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
++    barriers[0].oldLayout = source->layout;
++    barriers[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
++    barriers[1].image = destination.resource.image;
++    barriers[1].srcAccessMask = destination_sync.access;
++    barriers[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
++    barriers[1].oldLayout = destination.layout;
++    barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
++    profile::CpuCall(profile::CpuOp::kDriverBarrier, [&] {
++      dfn.vkCmdPipelineBarrier(command_buffer, source_sync.stages | destination_sync.stages,
++          VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr,
++          uint32_t(barriers.size()), barriers.data());
++    });
++    std::array<VkImageCopy, 2> copies{};
++    for (uint32_t i = 0; i < copies.size(); ++i) {
++      copies[i].srcSubresource = {i ? VK_IMAGE_ASPECT_STENCIL_BIT : VK_IMAGE_ASPECT_DEPTH_BIT,
++                                 0, 0, 1};
++      copies[i].dstSubresource = copies[i].srcSubresource;
++      copies[i].extent = {source->width, source->height, 1};
++    }
++    profile::CpuCall(profile::CpuOp::kDriverDraw, [&] {
++      dfn.vkCmdCopyImage(command_buffer, source->resource.image,
++          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, destination.resource.image,
++          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, uint32_t(copies.size()), copies.data());
++    });
++    source->layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
++    destination.layout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
++    destination.ever_written = true;
++    destination.aspect_content.CopyFrom(source->aspect_content, depth_stencil, owner.serial);
++    destination.materialized_placement = GetGuestPlacementKey(destination_view);
++    destination.materialized_serial = owner.serial;
++    native_placement_owners_[destination.materialized_placement] = {
++        &destination, destination_view, owner.serial, owner.frame,
++        owner.command_index, owner.render_phase, owner.write_kind};
++    TraceNativeRendererEvent("placement-depth-materialized",
++        fmt::format("source={:08X} destination={:08X} extent={}x{} samples={} serial={}",
++            source->descriptor.handle, destination.descriptor.handle, destination.width,
++            destination.height, uint32_t(destination.samples), destination.materialized_serial));
++    return true;
++  }
++#endif
+   if (!source || source == &destination || source->is_reflection || destination.is_reflection ||
+       source->aspect != VK_IMAGE_ASPECT_COLOR_BIT ||
+       destination.aspect != VK_IMAGE_ASPECT_COLOR_BIT || !source->ever_written ||
+@@ -23554,7 +23872,7 @@ bool Gta4NativeGraphicsSystem::PrepareSurfaceContent(VkCommandBuffer command_buf
+   if (!owner) {
+     return true;
+   }
+-  if (depth) {
++  if (depth && !MCLA_NATIVE_TITLE) {
+     REXLOG_ERROR(
+         "gta4-native-cause: point=placement-view-rejected frame={} cmd={} reason=depth-view "
+         "source={:08X} destination={:08X} serial={}",
+@@ -23832,8 +24150,12 @@ bool Gta4NativeGraphicsSystem::RecordResolve(VkCommandBuffer command_buffer,
+           destination ? destination->content.last_source_write_serial : 0,
+           destination ? destination->content.last_resolved_frame : 0));
+       if (fire_images_ && destination && std::string_view(result) == "ok" &&
+-          (destination->is_reflection || (destination->aspect & VK_IMAGE_ASPECT_DEPTH_BIT)) &&
+-          fire_checkpoints_["resolve-images"]++ < 16)
++          (MCLA_NATIVE_TITLE
++               ? destination->width >= 320 &&
++                     ((destination->aspect & VK_IMAGE_ASPECT_COLOR_BIT) ||
++                      (destination->width == 1280 && destination->height == 720))
++               : destination->is_reflection || (destination->aspect & VK_IMAGE_ASPECT_DEPTH_BIT)) &&
++          fire_checkpoints_["resolve-images"]++ < (MCLA_NATIVE_TITLE ? 64 : 16))
+         FireImage(command_buffer, "resolved-image", &command, nullptr, destination,
+             VK_NULL_HANDLE, VK_FORMAT_UNDEFINED, VK_IMAGE_LAYOUT_UNDEFINED, 0, 0,
+             (destination->aspect & VK_IMAGE_ASPECT_COLOR_BIT) ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT,
+@@ -24144,6 +24466,28 @@ bool Gta4NativeGraphicsSystem::RecordResolve(VkCommandBuffer command_buffer,
+   const bool scale_conversion = RequiresNativeResolveScaleConversion(
+       source_copy_width, source_copy_height, destination_copy_width, destination_copy_height);
+ 
++#if MCLA_NATIVE_TITLE
++  if (depth && destination->format == VK_FORMAT_R8G8B8A8_UNORM &&
++      !scale_conversion && source_left == destination_x && source_top == destination_y &&
++      resolve.destination_level == 0 && content_source->samples == VK_SAMPLE_COUNT_1_BIT) {
++    const VkRect2D rectangle{{destination_x, destination_y},
++                            {destination_copy_width, destination_copy_height}};
++    const bool packed = RecordPackedDepthSurfaceResolve(command_buffer, *content_source,
++        *destination, rectangle, (resolve.source.format & 0x3F) == 23);
++    if (packed) {
++      // The result is a COLOR product of depth/stencil, not copied color provenance.
++      const uint64_t serial = placement_owner ? placement_owner->serial
++                                             : content_source->materialized_serial;
++      destination->content.CommitResolve(submitted_frame, serial);
++      destination->aspect_content.Write(VK_IMAGE_ASPECT_COLOR_BIT,
++          next_surface_write_serial_++, content_source->aspect_content.depth.writer_serial);
++    }
++    const bool cleared = RecordResolveClears(command_buffer, command, resolve, submitted_frame);
++    log_result(packed && cleared ? "ok" : "fail", packed ? "packed-depth" : "packed-depth-rejected");
++    return packed && cleared;
++  }
++#endif
++
+   enum class ResolveOperation {
+     kCopy,
+     kBlit,
+@@ -25469,8 +25813,8 @@ bool Gta4NativeGraphicsSystem::RecordNativeFrame(
+   presenter_written = false;
+   (void)environmental_data;
+   const bool legacy_diagnostics =
+-      rex::diagnostics::IsEnabled(rex::diagnostics::Category::kNativeTrace) &&
+-      (REXCVAR_GET(gta4_trace_startup_content) || REXCVAR_GET(gta4_trace_native_renderer));
++      MCLA_NATIVE_TITLE || (rex::diagnostics::IsEnabled(rex::diagnostics::Category::kNativeTrace) &&
++      (REXCVAR_GET(gta4_trace_startup_content) || REXCVAR_GET(gta4_trace_native_renderer)));
+   const bool transition_trace =
+       rex::diagnostics::IsEnabled(rex::diagnostics::Category::kTransition) &&
+       transition::IsEnabled() && transition::ActiveTransitionId();
+@@ -27115,6 +27459,9 @@ bool Gta4NativeGraphicsSystem::RecordNativeFrame(
+         command.type == CommandType::kClear || command.type == CommandType::kRenderPhaseMarker ||
+         (command.pipeline_state && command.pipeline_state->pixel_shader_resource &&
+          FireDownstreamShader(command.pipeline_state->pixel_shader_resource->filename)));
++#if MCLA_NATIVE_TITLE
++    fire_event_active_ |= fire_frame_ && command.type == CommandType::kDrawPrimitiveUp;
++#endif
+     if (fire_event_active_) TraceFireCommand("record-begin", command, "captured-command");
+     const auto fire_command_reset = MakeScopeExit([this] { fire_event_active_ = false; });
+     bulb_current_command_ = bulb_trace_frame_ && command.bulb_trace ? &command : nullptr;
+@@ -31837,7 +32184,7 @@ bool Gta4NativeGraphicsSystem::RecordNativeFrame(
+         "gta4-native-stage: trace={} frame={} stage=record-end any-recorded={} present-copy={}",
+         trace_sequence, submitted_frame, recorded_draw, presenter_transfer_written);
+   }
+-  if (legacy_diagnostics && (invocation <= 16 || ShouldLogDiagnosticFrame(submitted_frame))) {
++  if (legacy_diagnostics && (invocation <= 16 || (MCLA_NATIVE_TITLE && submitted_frame % 120 == 0) || ShouldLogDiagnosticFrame(submitted_frame))) {
+     REXLOG_INFO(
+         "gta4-native-diag: frame={} invocation={} queued={} draw={}/{}/{} clear={} resolve={} "
+         "missing-state={} target-fail={} targets[presenter={},offscreen={}] "
+@@ -32153,6 +32500,7 @@ bool Gta4NativeGraphicsSystem::ClearGuestOutput(
+       legacy_diagnostics && selected_trace_frame
+           ? indexed_frame_trace_counter.fetch_add(1, std::memory_order_relaxed)
+           : 0;
++  // Full command traces are opt-in; retain bounded MCLA startup failures.
+   const bool trace_stages = legacy_diagnostics && selected_trace_frame;
+   if (trace_stages) {
+     REXLOG_WARN(
+@@ -32483,6 +32831,7 @@ bool Gta4NativeGraphicsSystem::ClearGuestOutput(
+               native_samplers_.size());
+         }
+         if (!textures_prepared) {
++          REXLOG_ERROR("gta4-native: frame={} failed during texture preparation", submitted_frame);
+           return false;
+         }
+         if (native_profile_frame_started) {
+diff --git a/glue/rexglue-sdk-main/src/graphics/gta4_native/graphics_system.h b/glue/rexglue-sdk-main/src/graphics/gta4_native/graphics_system.h
+index 5c47964..e5e2f52 100644
+--- a/glue/rexglue-sdk-main/src/graphics/gta4_native/graphics_system.h
++++ b/glue/rexglue-sdk-main/src/graphics/gta4_native/graphics_system.h
+@@ -130,6 +130,7 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
+     uint32_t location = 0;
+     NativeVertexNumericType numeric_type = NativeVertexNumericType::kFloat;
+     uint32_t component_count = 0;
++    uint32_t native_location = 0;
+ 
+     bool operator==(const NativeVertexInput&) const = default;
+   };
+@@ -932,6 +933,7 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
+     SurfaceDescriptor descriptor{};
+     NativeImageResource resource;
+     VkImageView sampled_view = VK_NULL_HANDLE;
++    VkImageView sampled_stencil_view = VK_NULL_HANDLE;
+     VkBuffer depth_handoff_stencil_scratch_buffer = VK_NULL_HANDLE;
+     VkDeviceMemory depth_handoff_stencil_scratch_memory = VK_NULL_HANDLE;
+     VkDeviceSize depth_handoff_stencil_scratch_size = 0;
+@@ -1510,6 +1512,9 @@ class Gta4NativeGraphicsSystem final : public system::IGraphicsSystem {
+   bool RecordDepthSurfaceHandoff(VkCommandBuffer command_buffer,
+                                  const NativeCommand& native_command, uint32_t submitted_frame);
+   bool RecordPackedDepthAlias(VkCommandBuffer command_buffer, NativeTextureImage& destination);
++  bool RecordPackedDepthSurfaceResolve(VkCommandBuffer command_buffer,
++      NativeSurfaceImage& source, NativeTextureImage& destination,
++      const VkRect2D& rectangle, bool float24);
+   bool RefreshPackedDepthAliases(VkCommandBuffer command_buffer, uint64_t source_generation);
+   bool PrepareSurfaceContent(VkCommandBuffer command_buffer, NativeSurfaceImage& surface,
+                              const SurfaceDescriptor& descriptor, bool depth,
+diff --git a/glue/rexglue-sdk-main/src/kernel/CMakeLists.txt b/glue/rexglue-sdk-main/src/kernel/CMakeLists.txt
+index 59ca6fb..3f1b98f 100644
+--- a/glue/rexglue-sdk-main/src/kernel/CMakeLists.txt
++++ b/glue/rexglue-sdk-main/src/kernel/CMakeLists.txt
+@@ -18,6 +18,7 @@ set(REXKERNEL_SOURCES
+     xam/xam_nui.cpp
+     xam/xam_party.cpp
+     xam/xam_task.cpp
++    xam/xam_storage_ui.cpp
+     xam/xam_ui.cpp
+     xam/xam_user.cpp
+     xam/xam_video.cpp
+diff --git a/glue/rexglue-sdk-main/src/kernel/xam/xam_ui.cpp b/glue/rexglue-sdk-main/src/kernel/xam/xam_ui.cpp
+index a398488..38c2e44 100644
+--- a/glue/rexglue-sdk-main/src/kernel/xam/xam_ui.cpp
++++ b/glue/rexglue-sdk-main/src/kernel/xam/xam_ui.cpp
+@@ -35,6 +35,9 @@ namespace kernel {
+ namespace xam {
+ using namespace rex::system;
+ 
++// Shared with the embedded storage selector; implementation has no desktop UI dependencies.
++X_RESULT xeXamDispatchHeadless(std::function<X_RESULT()> run_callback, uint32_t overlapped);
++
+ // TODO(gibbed): This is all one giant WIP that seems to work better than the
+ // previous immediate synchronous completion of dialogs.
+ //
+@@ -158,29 +161,6 @@ X_RESULT xeXamDispatchDialogEx(T* dialog,
+   }
+ }
+ 
+-X_RESULT xeXamDispatchHeadless(std::function<X_RESULT()> run_callback, uint32_t overlapped) {
+-  auto pre = []() {
+-    REXKRNL_DEBUG("xeXamDispatchHeadless: Broadcasting XN_SYS_UI = true");
+-    // Broadcast XN_SYS_UI = true
+-    REX_KERNEL_STATE()->BroadcastNotification(0x9, true);
+-  };
+-  auto post = []() {
+-    rex::thread::Sleep(std::chrono::milliseconds(100));
+-    REXKRNL_DEBUG("xeXamDispatchHeadless: Broadcasting XN_SYS_UI = false");
+-    // Broadcast XN_SYS_UI = false
+-    REX_KERNEL_STATE()->BroadcastNotification(0x9, false);
+-  };
+-  if (!overlapped) {
+-    pre();
+-    auto result = run_callback();
+-    post();
+-    return result;
+-  } else {
+-    REX_KERNEL_STATE()->CompleteOverlappedDeferred(run_callback, overlapped, pre, post);
+-    return X_ERROR_IO_PENDING;
+-  }
+-}
+-
+ X_RESULT xeXamDispatchHeadlessEx(std::function<X_RESULT(uint32_t&, uint32_t&)> run_callback,
+                                  uint32_t overlapped) {
+   auto pre = []() {
+@@ -501,22 +481,6 @@ u32 XamShowKeyboardUI_entry(u32 user_index, u32 flags, mapped_wstring default_te
+   return result;
+ }
+ 
+-u32 XamShowDeviceSelectorUI_entry(u32 user_index, u32 content_type, u32 content_flags,
+-                                  u64 total_requested, mapped_u32 device_id_ptr,
+-                                  mapped_void overlapped) {
+-  REXKRNL_DEBUG("XamShowDeviceSelectorUI({:08X}, {:08X}, {:08X}, {:016X}, {:08X}, {:08X})",
+-                uint32_t(user_index), uint32_t(content_type), uint32_t(content_flags),
+-                uint64_t(total_requested), device_id_ptr.guest_address(),
+-                overlapped.guest_address());
+-  return xeXamDispatchHeadless(
+-      [device_id_ptr]() -> X_RESULT {
+-        // NOTE: 0x00000001 is our dummy device ID from xam_content.cc
+-        *device_id_ptr = 0x00000001;
+-        return X_ERROR_SUCCESS;
+-      },
+-      overlapped.guest_address());
+-}
+-
+ void XamShowDirtyDiscErrorUI_entry(u32 user_index) {
+   REXKRNL_ERROR("XamShowDirtyDiscErrorUI called! user_index={}", uint32_t(user_index));
+   REXKRNL_ERROR("This indicates a disc/file read error - check that all game files exist");
+@@ -646,7 +610,6 @@ uint32_t XamShowMessageBoxUIEx_entry() {
+ REX_EXPORT(__imp__XamIsUIActive, rex::kernel::xam::XamIsUIActive_entry)
+ REX_EXPORT(__imp__XamShowMessageBoxUI, rex::kernel::xam::XamShowMessageBoxUI_entry)
+ REX_EXPORT(__imp__XamShowKeyboardUI, rex::kernel::xam::XamShowKeyboardUI_entry)
+-REX_EXPORT(__imp__XamShowDeviceSelectorUI, rex::kernel::xam::XamShowDeviceSelectorUI_entry)
+ REX_EXPORT(__imp__XamShowDirtyDiscErrorUI, rex::kernel::xam::XamShowDirtyDiscErrorUI_entry)
+ REX_EXPORT(__imp__XamShowPartyUI, rex::kernel::xam::XamShowPartyUI_entry)
+ REX_EXPORT(__imp__XamShowCommunitySessionsUI, rex::kernel::xam::XamShowCommunitySessionsUI_entry)
+diff --git a/glue/rexglue-sdk-main/src/kernel/xam/xam_storage_ui.cpp b/glue/rexglue-sdk-main/src/kernel/xam/xam_storage_ui.cpp
+new file mode 100644
+index 0000000..9547fcc
+--- /dev/null
++++ b/glue/rexglue-sdk-main/src/kernel/xam/xam_storage_ui.cpp
+@@ -0,0 +1,68 @@
++/**
++ ******************************************************************************
++ * Xenia : Xbox 360 Emulator Research Project                                 *
++ ******************************************************************************
++ * Copyright 2022 Ben Vanik. All rights reserved.                             *
++ * Released under the BSD license - see LICENSE in the root for more details. *
++ ******************************************************************************
++ * Extracted from xam_ui.cpp so embedded hosts can select their content device
++ * without linking the desktop dialog implementation.
++ */
++
++#include <chrono>
++#include <functional>
++
++#include <rex/hook.h>
++#include <rex/kernel/xam/private.h>
++#include <rex/logging.h>
++#include <rex/system/xam/content_device.h>
++#include <rex/system/xtypes.h>
++#include <rex/thread.h>
++#include <rex/types.h>
++
++namespace rex::kernel::xam {
++using namespace rex::system;
++
++X_RESULT xeXamDispatchHeadless(std::function<X_RESULT()> run_callback, uint32_t overlapped) {
++  auto pre = []() {
++    REX_KERNEL_STATE()->BroadcastNotification(0x9, true);  // XN_SYS_UI
++  };
++  auto post = []() {
++    // Match desktop headless dispatch: some games register the notification
++    // listener only after observing their overlapped completion.
++    rex::thread::Sleep(std::chrono::milliseconds(100));
++    REX_KERNEL_STATE()->BroadcastNotification(0x9, false);
++  };
++  if (!overlapped) {
++    pre();
++    const auto result = run_callback();
++    post();
++    return result;
++  }
++  REX_KERNEL_STATE()->CompleteOverlappedDeferred(run_callback, overlapped, pre, post);
++  return X_ERROR_IO_PENDING;
++}
++
++u32 XamShowDeviceSelectorUI_entry(u32 user_index, u32 content_type, u32 content_flags,
++                                  u64 total_requested, mapped_u32 device_id_ptr,
++                                  mapped_void overlapped) {
++  if (!device_id_ptr) {
++    return X_ERROR_INVALID_PARAMETER;
++  }
++  REXKRNL_INFO("XamShowDeviceSelectorUI: user={} type={} flags={:08X} requested={} "
++               "overlapped={:08X}; selecting content HDD",
++               uint32_t(user_index), uint32_t(content_type), uint32_t(content_flags),
++               uint64_t(total_requested), overlapped.guest_address());
++  return xeXamDispatchHeadless(
++      [device_id_ptr]() -> X_RESULT {
++        // This is the same device enumerated by xam_content_device.cpp. Manual
++        // saves and autosaves continue through ContentManager's normal paths.
++        *device_id_ptr = static_cast<uint32_t>(system::xam::DummyDeviceId::HDD);
++        return X_ERROR_SUCCESS;
++      },
++      overlapped.guest_address());
++}
++
++}  // namespace rex::kernel::xam
++
++REX_EXPORT(__imp__XamShowDeviceSelectorUI, rex::kernel::xam::XamShowDeviceSelectorUI_entry)

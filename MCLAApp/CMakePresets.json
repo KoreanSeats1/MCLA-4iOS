@@ -1,0 +1,97 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "ios-simulator-release",
+      "displayName": "MCLA iOS Simulator Release",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/../out/build/ios-simulator-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "18.0",
+        "CMAKE_OSX_SYSROOT": "iphonesimulator",
+        "MCLA_RUNTIME_ENABLED": "ON"
+      }
+    },
+    {
+      "name": "ios-device-release",
+      "displayName": "MCLA iOS Device Release",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/../out/build/ios-device-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "18.0",
+        "CMAKE_OSX_SYSROOT": "iphoneos",
+        "MCLA_RUNTIME_ENABLED": "ON"
+      }
+    },
+    {
+      "name": "ios-device-single-tile-lab",
+      "displayName": "Separate MCLA Single-Tile Lab App for iPad",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/../out/build/ios-device-single-tile-lab-separate",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "18.0",
+        "CMAKE_OSX_SYSROOT": "iphoneos",
+        "MCLA_RUNTIME_ENABLED": "ON",
+        "MCLA_DIRECT_METAL": "ON",
+        "MCLA_SINGLE_TILE_LAB": "ON"
+      }
+    },
+    {
+      "name": "ios-device-smaa-lab",
+      "displayName": "Separate MCLA SMAA Lab App for iPad",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/../out/build/ios-device-smaa-lab",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "18.0",
+        "CMAKE_OSX_SYSROOT": "iphoneos",
+        "MCLA_RUNTIME_ENABLED": "ON",
+        "MCLA_DIRECT_METAL": "ON",
+        "MCLA_SINGLE_TILE_LAB": "OFF",
+        "MCLA_SMAA_LAB": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "ios-simulator-release",
+      "configurePreset": "ios-simulator-release",
+      "configuration": "Release",
+      "targets": ["MCLAApp"]
+    },
+    {
+      "name": "ios-device-release",
+      "configurePreset": "ios-device-release",
+      "configuration": "Release",
+      "targets": ["MCLAApp"]
+    },
+    {
+      "name": "ios-device-single-tile-lab",
+      "configurePreset": "ios-device-single-tile-lab",
+      "configuration": "Release",
+      "targets": ["MCLAApp"]
+    },
+    {
+      "name": "ios-device-smaa-lab",
+      "configurePreset": "ios-device-smaa-lab",
+      "configuration": "Release",
+      "targets": ["MCLAApp"]
+    }
+  ]
+}

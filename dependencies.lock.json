@@ -1,0 +1,17 @@
+{
+  "larecomp": {
+    "url": "https://github.com/mzzvxm/LARecomp.git",
+    "commit": "29daf87d5e891852486413103d97cf6207aaf787",
+    "patch": "patches/larecomp-ios.patch"
+  },
+  "theft4-foundation": {
+    "url": "https://github.com/KoreanSeats1/Theft4.git",
+    "commit": "5ca8635b430749cd1b09029b3cb2aa4c731c8dcc",
+    "patch": "patches/theft4-foundation-ios.patch"
+  },
+  "XeniOS-reference": {
+    "url": "https://github.com/xenios-jp/XeniOS.git",
+    "commit": "87b176a078c316fde3adf67a217f0c44615b0e0d",
+    "patch": null
+  }
+}

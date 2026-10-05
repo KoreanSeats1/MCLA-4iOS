@@ -1,0 +1,9 @@
+[submodule "larecomp"]
+	path = larecomp
+	url = https://github.com/mzzvxm/LARecomp.git
+[submodule "theft4-foundation"]
+	path = theft4-foundation
+	url = https://github.com/KoreanSeats1/Theft4.git
+[submodule "XeniOS-reference"]
+	path = XeniOS-reference
+	url = https://github.com/xenios-jp/XeniOS.git

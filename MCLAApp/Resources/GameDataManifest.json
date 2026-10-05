@@ -1,0 +1,15 @@
+{
+  "title": "Midnight Club: Los Angeles — Complete Edition",
+  "platform": "Xbox 360",
+  "titleId": "TT-2040",
+  "mediaId": "5940C9DB",
+  "region": "all",
+  "baselineDefaultXexSha256": "c386f4001fa569e6ad4b982f441f67412f00b3f47c166134555cd4b59854a432",
+  "requiredFiles": [
+    "default.xex",
+    "xarchive_audio.rpf",
+    "xarchive_audlo.rpf",
+    "xarchive_cache.rpf",
+    "xarchive_music.rpf"
+  ]
+}

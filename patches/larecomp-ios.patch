@@ -1,0 +1,222 @@
+diff --git a/src/mc_engine/hooks.cpp b/src/mc_engine/hooks.cpp
+index 5283518..be69dfa 100644
+--- a/src/mc_engine/hooks.cpp
++++ b/src/mc_engine/hooks.cpp
+@@ -4166,9 +4166,49 @@ void Hook_LzxDecompressPost(PPCRegister& r1, PPCRegister& r3) {
+     }
+ }
+ #else // REXGLUE_HAS_XEO3_TARGET
++#include "frame_delta_guard.h"
++#include <rex/runtime.h>
++#include <rex/memory.h>
++#include <cstring>
++#include <rex/chrono/clock.h>
+ // XEO3 stubs: empty implementations so the linker resolves codegen calls.
+ 
+ #include <rex/ppc/context.h>
++#include <cmath>
++#include <cstdint>
++#include <cstdlib>
++#include "frame_rate_scaling.h"
++
++extern "C" bool MCLAGraphicsExperimental60FPS(void);
++static float MCLAReadTimingFloat(uint32_t address) {
++    auto* runtime=rex::Runtime::instance();
++    const auto* base=runtime ? runtime->virtual_membase() : nullptr;
++    if(!base) return 0;
++    const auto* p=base+address;
++    uint32_t bits=(uint32_t(p[0])<<24)|(uint32_t(p[1])<<16)|(uint32_t(p[2])<<8)|p[3];
++    float value; std::memcpy(&value,&bits,sizeof(value)); return value;
++}
++
++extern "C" bool MCLAGraphicsMotionBlurDisabled(void);
++extern "C" bool MCLAGraphicsDepthOfFieldDisabled(void);
++extern "C" void MCLAGraphicsGuestVideoSize(uint32_t* width, uint32_t* height);
++
++static bool MCLADeviceAspect(PPCRegister& value, unsigned hookBit) {
++    // On iPad, this hook alone corrected the gameplay camera while retaining
++    // the centered, undistorted 2D title/HUD projection. The remaining three
++    // collectively disturbed authored UI placement and are left off. Keep a
++    // process-local mask for controlled A/B captures on other devices.
++    static const unsigned hookMask = [] {
++        const char* text = std::getenv("MCLA_ASPECT_HOOK_MASK");
++        return text ? unsigned(std::strtoul(text, nullptr, 0)) : 4u;
++    }();
++    if ((hookMask & hookBit) == 0) return false;
++    uint32_t width = 1280, height = 720;
++    MCLAGraphicsGuestVideoSize(&width, &height);
++    if (width == 1280 && height == 720) return false;
++    value.f64 = double(width) / double(height);
++    return true;
++}
+ 
+ void Hook_CacheVinylPaint(PPCRegister& r3, PPCRegister& r4, PPCRegister& r5, PPCRegister& r6) {}
+ void Hook_PhotoModeCapture(PPCRegister& r3) {}
+@@ -4180,23 +4220,43 @@ void ApplyDebugOptions() {}
+ void InitHooks() {}
+ bool SkipIntro() { return false; }
+ void MCLA_SkipIntroRenderPassMask(PPCRegister& r4) {}
+-bool Patch_AspectRatio_82233EB4(PPCRegister& f0) { return false; }
+-bool Patch_AspectRatio_82214BB8(PPCRegister& f10) { return false; }
+-bool Patch_AspectRatio_822E5E68(PPCRegister& f12) { return false; }
+-bool Patch_AspectRatio_8223E5E0(PPCRegister& f13) { return false; }
++bool Patch_AspectRatio_82233EB4(PPCRegister& f0) { return MCLADeviceAspect(f0, 1u); }
++bool Patch_AspectRatio_82214BB8(PPCRegister& f10) { return MCLADeviceAspect(f10, 2u); }
++bool Patch_AspectRatio_822E5E68(PPCRegister& f12) { return MCLADeviceAspect(f12, 4u); }
++bool Patch_AspectRatio_8223E5E0(PPCRegister& f13) { return MCLADeviceAspect(f13, 8u); }
+ void Patch_SingleTile(PPCRegister& r7, PPCRegister& r8, PPCRegister& r25, PPCRegister& r28) {}
+ bool Patch_EdramLimit(PPCRegister& r11) { return false; }
+ bool Patch_DebugCamGate() { return false; }
+ void Patch_DebugCam(PPCRegister& r3) {}
+ bool MCLA_UI_SkipMissingLights(PPCRegister& r3) { return false; }
+-bool Patch_60FPS_Byte(PPCRegister& r11) { return false; }
+-bool Patch_DisableMotionBlur(PPCRegister& r3) { return false; }
++bool Patch_60FPS_Byte(PPCRegister& r11) {
++    if(!MCLAGraphicsExperimental60FPS()) return false;
++    r11.u64=1; return true;
++}
++bool Patch_DisableMotionBlur(PPCRegister& r3) {
++    if (!MCLAGraphicsMotionBlurDisabled()) return false;
++    r3.u64=0;
++    return true;
++}
+ bool Patch_DisableMSAA(PPCRegister& r11) { return false; }
+ bool Patch_PhysicsCollision() { return false; }
+ bool Patch_DisableRubberBanding() { return false; }
+ bool Patch_DisableDoF() { return false; }
+-void Patch_DofComposite(PPCRegister& r3) {}
++void Patch_DofComposite(PPCRegister& r3) {
++    if (!MCLAGraphicsDepthOfFieldDisabled()) return;
++    auto* runtime = rex::Runtime::instance();
++    auto* memory = runtime ? runtime->memory() : nullptr;
++    const uint32_t object = uint32_t(r3.u64);
++    if (!memory || !object || object > UINT32_MAX - 0x100) return;
++    const uint32_t address = object + 0xF0;
++    auto* heap = memory->LookupHeap(address);
++    if (!heap || heap->QueryRangeAccess(address, address + 15) !=
++                     rex::memory::PageAccess::kReadWrite) return;
++    // Only the circle-of-confusion vector; preserve all other composite inputs.
++    std::memset(memory->TranslateVirtual<uint8_t*>(address), 0, 16);
++}
+ void Patch_ScaleTrafficLOD(PPCRegister& f0) {}
++void Patch_ArchiveList(PPCRegister& r1) {}
+ void Patch_RideHeightFit(PPCRegister& f30) {}
+ bool Patch_WheelFitBypass() { return false; }
+ bool Patch_SpeedUnits(PPCRegister& r11) { return false; }
+@@ -4207,7 +4267,19 @@ void Hook_SwfContextEnter(PPCRegister& r3) {}
+ void UpdateCityLODMemory() {}
+ void Patch_ScaleCityLOD(PPCRegister& f13) {}
+ bool OpenRexGraphicsFromGameOptions_826686D4(PPCRegister& r3) { return false; }
+-void Patch_FOVScale(PPCRegister& f1, PPCRegister& r24) {}
++void Patch_FOVScale(PPCRegister& f1, PPCRegister& r24) {
++    (void)r24;
++    uint32_t width = 1280, height = 720;
++    MCLAGraphicsGuestVideoSize(&width, &height);
++    if (height <= 720 || !std::isfinite(f1.f64) || f1.f64 <= 0.0) return;
++    // Taller displays need a wider vertical frustum while retaining the
++    // 16:9 horizontal view. Camera FOV is in degrees in this title hook.
++    const double radians = f1.f64 * (3.14159265358979323846 / 180.0);
++    if (radians >= 3.0) return;
++    f1.f64 = 2.0 * std::atan(std::tan(radians * 0.5) *
++                            double(height) / 720.0) *
++             (180.0 / 3.14159265358979323846);
++}
+ void Patch_DeltaTimePre() {}
+ void Patch_DeltaTime(PPCRegister& r24) {}
+ void Patch_BypassVehicleDLC(PPCRegister& r30) {}
+@@ -4216,9 +4288,17 @@ bool Patch_ImpostorShadowGuard(PPCRegister& r3) { return false; }
+ void Hook_CaptureDistrict(PPCRegister& r3) {}
+ void Hook_LzxDecompressPre(PPCRegister& r1) {}
+ void Hook_LzxDecompressPost(PPCRegister& r1, PPCRegister& r3) {}
+-void MCLACameraPosSmoothing(PPCRegister& f13) {}
+-void MCLACameraLookAtSmoothing(PPCRegister& f0) {}
+-void MCLAChassisDepthSmoothing(PPCRegister& f0) {}
++static void MCLAApplyCameraSmoothing(PPCRegister& value) {
++    if(!MCLAGraphicsExperimental60FPS()) return;
++    value.f64=mc::CameraSmoothing(value.f64,MCLAReadTimingFloat(0x827D7508),
++                                MCLAReadTimingFloat(0x827D750C));
++}
++void MCLACameraPosSmoothing(PPCRegister& f13) { MCLAApplyCameraSmoothing(f13); }
++void MCLACameraLookAtSmoothing(PPCRegister& f0) { MCLAApplyCameraSmoothing(f0); }
++void MCLAChassisDepthSmoothing(PPCRegister& f0) {
++    if(MCLAGraphicsExperimental60FPS())
++        f0.f64=mc::ChassisSmoothing(f0.f64,MCLAReadTimingFloat(0x827D7508));
++}
+ void MCLAAmbientDensityTuning(PPCRegister& r3) {}
+ bool Patch_DisableImposterShadows(PPCRegister& r11) { return false; }
+ void MCLA_TrafficChassisBound_8232D048(PPCRegister& r9, PPCRegister& r11) {}
+@@ -4226,8 +4306,18 @@ void MCLA_TrafficChassisBound_8232D900(PPCRegister& r3, PPCRegister& r11) {}
+ void MCLA_TrafficChassisBound_8232E274(PPCRegister& r3, PPCRegister& r31) {}
+ bool MCLA_TrafficBoundRelease_8259AA40(PPCRegister& r30) { return false; }
+ void MCLA_TuneFieldProbe(PPCRegister& r3, PPCRegister& r4, PPCRegister& r5, PPCRegister& r6) {}
+-void MCLAFrameDelta(PPCRegister& r8) {}
++// iOS also needs the desktop hitch guard. Native presentation owns pacing;
++// keep desktop frame limiting out of this hook; the host owns both pacers.
++void MCLAFrameDelta(PPCRegister& r8) {
++    r8.u64=mc::ClampFrameDeltaTicks(r8.u64,
++        rex::chrono::Clock::guest_tick_frequency());
++}
+ void MCLA_GuestInterruptProbe(PPCRegister& r3, PPCRegister& r31) {}
+-bool MCLAUseRealDelta() { return false; }
+-void MCLAFixedStepPath(PPCRegister& r3, PPCRegister& f11) {}
++bool MCLAUseRealDelta() { return MCLAGraphicsExperimental60FPS(); }
++void MCLAFixedStepPath(PPCRegister& r3, PPCRegister& f11) {
++    if(!MCLAGraphicsExperimental60FPS()) return;
++    // Original timer has already measured +0x58. Keep its timescale, clamps,
++    // accumulators and physics substep count intact on both clock paths.
++    f11.f64=MCLAReadTimingFloat(uint32_t(r3.u64)+0x58);
++}
+ #endif // REXGLUE_HAS_XEO3_TARGET
+diff --git a/src/mc_engine/map_mouse.cpp b/src/mc_engine/map_mouse.cpp
+index e8d75de..b995b2b 100644
+--- a/src/mc_engine/map_mouse.cpp
++++ b/src/mc_engine/map_mouse.cpp
+@@ -879,6 +879,8 @@ bool MCLA_MapCursorSweepNullGuard(PPCRegister& r31, PPCRegister& r30,
+ 
+ #else  // REXGLUE_HAS_XEO3_TARGET
+ 
++#include <rex/ppc/context.h>
++
+ void InitMapMouse() {}
+ void TickMapMouse() {}
+ bool MapMouseWantsPointer() { return false; }
+diff --git a/src/mc_engine/frame_delta_guard.h b/src/mc_engine/frame_delta_guard.h
+new file mode 100644
+index 0000000..497c984
+--- /dev/null
++++ b/src/mc_engine/frame_delta_guard.h
+@@ -0,0 +1,12 @@
++#pragma once
++#include <cstdint>
++
++namespace mc {
++// Same unconditional 125 ms hitch limit used by the desktop MCLA hook.
++// Only bound elapsed ticks; preserve the title's original fixed-step path.
++constexpr uint64_t ClampFrameDeltaTicks(uint64_t ticks,uint64_t frequency) {
++    const uint64_t hz=frequency ? frequency : 50000000;
++    const uint64_t cap=hz/8;
++    return ticks>cap ? cap : ticks;
++}
++}
+diff --git a/src/mc_engine/frame_rate_scaling.h b/src/mc_engine/frame_rate_scaling.h
+new file mode 100644
+index 0000000..143d650
+--- /dev/null
++++ b/src/mc_engine/frame_rate_scaling.h
+@@ -0,0 +1,16 @@
++#pragma once
++#include <cmath>
++namespace mc {
++// Preserve the console's one-second decay, including the game's <60 FPS
++// half-factor branch. Round as the guest does without an unsafe float cast.
++inline double CameraSmoothing(double raw, double dt, double fps) {
++    if (!std::isfinite(raw) || !std::isfinite(dt) || !std::isfinite(fps) ||
++        raw <= 0 || raw >= 1 || dt <= 0 || fps <= 0) return raw;
++    const double k30 = std::round(fps) < 60 ? raw : raw * 0.5;
++    return 1.0 - std::pow(1.0 - k30, dt * 30.0);
++}
++inline double ChassisSmoothing(double original, double dt) {
++    if (!std::isfinite(dt) || dt <= 0) return original;
++    return 1.0 - std::pow(0.90, dt * 30.0);
++}
++}

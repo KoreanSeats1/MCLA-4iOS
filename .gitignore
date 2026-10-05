@@ -1,0 +1,44 @@
+# Local game content, credentials, user state and release products
+/MCLA_Game_Files
+/game/
+/assets/
+/out/
+/artifacts/
+/releases/
+/DerivedData/
+/logs/
+*.xex
+*.rpf
+*.iso
+*.ipa
+*.mobileprovision
+*.p12
+*.p8
+*.pem
+*.key
+*.cer
+*.dSYM/
+*.xcarchive/
+.DS_Store
+__pycache__/
+*.pyc
+stubs.txt
+
+# Generated game code and offline shader products require user-owned inputs.
+/MCLAApp/generated/
+/tools/build-*/
+/tools/build-native-cache/
+/larecomp/out/
+/larecomp/generated/
+/larecomp/generated_xeo3/
+
+# Private historical engineering notes remain local; curated docs are public.
+/CROSS_PROJECT_FINDINGS.md
+/MCLA_APP_BRINGUP.md
+/METAL_TRANSITION.md
+/MCLA_SINGLE_TILE_LAB.md
+/MCLA_SMAA_LAB.md
+
+/MCLAApp/out/
+/MCLAApp/generated_xeo3/
+/tools/launcher_preview/*.app/

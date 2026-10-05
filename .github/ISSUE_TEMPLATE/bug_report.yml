@@ -1,0 +1,33 @@
+name: Beta bug report
+description: Report a reproducible MCLA 4iOS problem
+body:
+  - type: markdown
+    attributes:
+      value: Please check docs/KNOWN_BUGS.md first. Do not upload game files, saves, provisioning profiles, certificates or a full app container.
+  - type: input
+    id: version
+    attributes:
+      label: Release version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and iOS/iPadOS version
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings and device state
+      description: Include resolution, FSR, effects, 30/60 FPS, Retail Mode and whether the device was warm. For installation issues include the signing tool/version and error.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps and expected/actual behavior
+      description: Include race, car and location where relevant. A short clip or screenshot helps.
+    validations:
+      required: true
