@@ -4,6 +4,7 @@
 #import "MCLALauncherView.h"
 #include "../../MCLAApp/runtime/MCLAControlOverhaul.h"
 #include <cassert>
+#import "MCLAControlArtwork.h"
 bool MCLAControlPreviewRightTrigger();
 @interface MCLAViewController (ControlPreview)
 - (void)refreshBringupStatus;
@@ -65,6 +66,24 @@ bool MCLAControlPreviewRightTrigger();
     launcher.hidden=YES; [launcher setSceneActive:NO];
     [self refreshTouchInputForGameVisible:YES];
     [self.view setNeedsLayout];
+    // Exercise the shipping cached art states, not a duplicate test renderer.
+    [self.view layoutIfNeeded];
+    NSDictionary* artControls=[self valueForKey:@"layoutControls"];
+    UIButton* nitro=artControls[@"nitro"];
+    UIImageView* art=[nitro valueForKey:@"artworkView"];
+    UIImage* normal=art.image;
+    assert(normal && normal.size.width>0);
+    nitro.highlighted=YES; UIImage* pressed=art.image;
+    assert(pressed && pressed!=normal && nitro.highlighted);
+    nitro.highlighted=NO; assert(art.image==normal);
+    nitro.enabled=NO; assert(art.image!=normal && art.image!=pressed);
+    nitro.enabled=YES; assert(art.image==normal);
+    assert([[nitro titleColorForState:UIControlStateNormal] isEqual:UIColor.clearColor]);
+    assert(!art.userInteractionEnabled);
+    UIButton* camera=artControls[@"camera"];
+    assert([camera.gestureRecognizers filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(UIGestureRecognizer* g, NSDictionary* bindings) {
+        (void)bindings; return [g isKindOfClass:UIPanGestureRecognizer.class] || [g isKindOfClass:UIPinchGestureRecognizer.class];
+    }]].count==2);
     // Exercise overlap/release through the production event handlers.
     NSDictionary* controls=[self valueForKey:@"layoutControls"];
     UIButton* gas=controls[@"gas"]; UIButton* hb=controls[@"handbrake"];
@@ -89,7 +108,7 @@ bool MCLAControlPreviewRightTrigger();
     assert([[gas titleForState:UIControlStateNormal] isEqual:@"GAS\nRT"]);
     [defaults setBool:YES forKey:@"MCLAControlOverhaulTestEnabled"];
     [self refreshTouchInputForGameVisible:YES];
-    NSLog(@"MCLA_CONTROL_PREVIEW PASS: production combined pedal overlap/release, isolated reset and original title restoration");
+    NSLog(@"MCLA_CONTROL_PREVIEW PASS: cached normal/pressed/disabled artwork, edit gestures, combined pedal overlap/release and isolated layout preferences");
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),dispatch_get_main_queue(),^{
         [self.view layoutIfNeeded];
         UIGraphicsImageRenderer* renderer=[[UIGraphicsImageRenderer alloc] initWithSize:self.view.bounds.size];
@@ -98,6 +117,21 @@ bool MCLAControlPreviewRightTrigger();
         }];
         NSString* path=[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/layout.png"];
         [UIImagePNGRepresentation(image) writeToFile:path atomically:YES];
+        UIGraphicsImageRenderer* sheet=[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(1280,640)];
+        UIImage* atlas=[sheet imageWithActions:^(UIGraphicsImageRendererContext* context) {
+            [[UIColor colorWithRed:.025 green:.06 blue:.08 alpha:1] setFill]; CGContextFillRect(context.CGContext,CGRectMake(0,0,1280,640));
+            NSArray* keys=@[@"pause",@"camera",@"nitro",@"ability",@"brake",@"handbrake",@"gps",@"hud",@"gas",@"gas_handbrake"];
+            NSArray* labels=@[@"",@"CAMERA",@"NITRO",@"ABILITY",@"BRAKE / REV",@"HANDBRAKE",@"MAP VIEW",@"MAP",@"GAS",@"GAS +\nHANDBRAKE"];
+            for(int state=0;state<3;++state) {
+                for(NSUInteger i=0;i<keys.count;++i) {
+                    UIImage* asset=MCLAControlArtwork(keys[i],labels[i],CGSizeMake(108,145),state==1,state!=2,0);
+                    [asset drawInRect:CGRectMake(20+i*124,40+state*190,108,145)];
+                }
+                NSString* name=@[@"NORMAL",@"PRESSED",@"DISABLED"][state];
+                [name drawAtPoint:CGPointMake(24,16+state*190) withAttributes:@{NSForegroundColorAttributeName:UIColor.whiteColor,NSFontAttributeName:[UIFont systemFontOfSize:12 weight:UIFontWeightBold]}];
+            }
+        }];
+        [UIImagePNGRepresentation(atlas) writeToFile:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/button-artwork.png"] atomically:YES];
         NSLog(@"MCLA_CONTROL_PREVIEW snapshot %@",path);
     });
 }

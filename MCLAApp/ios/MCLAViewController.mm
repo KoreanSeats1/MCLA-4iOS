@@ -11,6 +11,7 @@
 #import <GameController/GameController.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include "MCLAMetalPresentation.h"
+#import "MCLAControlArtwork.h"
 
 // This test branch enables the in-game experiment by default. Dedicated
 // switches leave the original branch’s control preferences untouched.
@@ -246,22 +247,70 @@ static void MCLARegisterGraphicsDefaults(void) {
 
 @end
 
-// UIKit normally changes a UIButton's appearance for each touch. That
-// schedules Core Animation work over the full-screen Metal drawable and can
-// miss the 30 Hz presentation slot on a busy device. These controls are
-// deliberately static while held; their input state still changes instantly.
+// Cached artwork changes instantly on press/release, without alpha animations
+// or GPU readback over the game's Metal drawable.
 @interface MCLAStaticTouchButton : UIButton
+@property(nonatomic,copy) NSString* artworkKey;
+@property(nonatomic,copy) NSString* artworkLabel;
+@property(nonatomic,assign) NSInteger artworkSegment;
+@property(nonatomic,assign) BOOL artworkHeld;
+@property(nonatomic,strong) UIImageView* artworkView;
+@property(nonatomic,strong) NSArray<UIImage*>* artworkStates;
+@property(nonatomic,assign) CGSize artworkSize;
+- (void)configureArtwork:(NSString*)key label:(NSString*)label segment:(NSInteger)segment;
 @end
 
 @implementation MCLAStaticTouchButton
-- (void)setHighlighted:(BOOL)highlighted {
-    (void)highlighted;
+- (void)configureArtwork:(NSString*)key label:(NSString*)label segment:(NSInteger)segment {
+    BOOL changed=![self.artworkKey isEqual:key] || ![self.artworkLabel isEqual:label] || self.artworkSegment!=segment;
+    self.artworkKey=key; self.artworkLabel=label; self.artworkSegment=segment;
+    if(!self.artworkView) {
+        self.artworkView=[[UIImageView alloc] initWithFrame:self.bounds];
+        self.artworkView.userInteractionEnabled=NO;
+        [self addSubview:self.artworkView];
+    }
+    self.titleLabel.hidden=YES;
+    for(NSNumber* state in @[@(UIControlStateNormal),@(UIControlStateHighlighted),@(UIControlStateDisabled)])
+        [self setTitleColor:UIColor.clearColor forState:state.unsignedIntegerValue];
+    self.backgroundColor=UIColor.clearColor; self.layer.borderWidth=0;
+    self.layer.cornerRadius=0; self.clipsToBounds=NO;
+    if(changed) { self.artworkStates=nil; [self setNeedsLayout]; }
 }
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    if(!self.artworkKey.length || self.bounds.size.width<=0 || self.bounds.size.height<=0) return;
+    self.artworkView.frame=self.bounds;
+    if(!self.artworkStates || !CGSizeEqualToSize(self.artworkSize,self.bounds.size)) {
+        self.artworkSize=self.bounds.size;
+        self.artworkStates=@[MCLAControlArtwork(self.artworkKey,self.artworkLabel,self.artworkSize,NO,YES,self.artworkSegment),
+            MCLAControlArtwork(self.artworkKey,self.artworkLabel,self.artworkSize,YES,YES,self.artworkSegment),
+            MCLAControlArtwork(self.artworkKey,self.artworkLabel,self.artworkSize,NO,NO,self.artworkSegment)];
+    }
+    self.titleLabel.hidden=YES;
+    [self refreshArtwork];
+}
+- (void)refreshArtwork {
+    if(!self.artworkKey.length) return;
+    self.titleLabel.hidden=YES;
+    if(!self.artworkStates) return;
+    NSUInteger state=!self.enabled ? 2 : self.artworkHeld ? 1 : 0;
+    UIImage* image=self.artworkStates[state];
+    if(self.artworkView.image==image) return;
+    [CATransaction begin]; [CATransaction setDisableActions:YES];
+    self.artworkView.image=image; [CATransaction commit];
+}
+- (BOOL)isHighlighted { return self.artworkHeld; }
+- (void)setHighlighted:(BOOL)highlighted {
+    if(self.artworkHeld==highlighted) return;
+    self.artworkHeld=highlighted; [self refreshArtwork];
+}
+- (void)setEnabled:(BOOL)enabled { [super setEnabled:enabled]; [self refreshArtwork]; }
 @end
 
 @interface MCLAVirtualStickView : UIControl
 @property(nonatomic, copy) void (^onStick)(float x, float y, BOOL active);
 @property(nonatomic, strong) UIView* thumb;
+@property(nonatomic, strong) UIImageView* baseArtwork;
 @property(nonatomic, strong) UILabel* caption;
 @property(nonatomic, weak) UITouch* trackedTouch;
 @end
@@ -277,7 +326,9 @@ static void MCLARegisterGraphicsDefaults(void) {
     self.layer.cornerRadius = 72;
     self.clipsToBounds = YES;
     self.multipleTouchEnabled = NO;
-    _thumb = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 58, 58)];
+    _baseArtwork=[[UIImageView alloc] initWithFrame:CGRectZero];
+    _baseArtwork.userInteractionEnabled=NO; [self addSubview:_baseArtwork];
+    _thumb = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, 58, 58)];
     _thumb.backgroundColor = [UIColor colorWithWhite:0.9 alpha:0.32];
     _thumb.layer.cornerRadius = 29;
     _thumb.userInteractionEnabled = NO;
@@ -295,6 +346,14 @@ static void MCLARegisterGraphicsDefaults(void) {
 - (void)layoutSubviews {
     [super layoutSubviews];
     self.caption.frame = CGRectMake(6, 8, self.bounds.size.width - 12, 16);
+    self.caption.hidden=YES;
+    self.backgroundColor=UIColor.clearColor; self.layer.borderWidth=0;
+    self.baseArtwork.frame=self.bounds;
+    self.baseArtwork.image=MCLAStickArtwork(self.bounds.size,NO);
+    CGFloat knob=MIN(self.bounds.size.width,self.bounds.size.height)*.39;
+    self.thumb.bounds=CGRectMake(0,0,knob,knob);
+    self.thumb.backgroundColor=UIColor.clearColor;
+    ((UIImageView*)self.thumb).image=MCLAStickArtwork(self.thumb.bounds.size,YES);
     if (!self.trackedTouch) self.thumb.center = CGPointMake(CGRectGetMidX(self.bounds),
                                                             CGRectGetMidY(self.bounds));
 }
@@ -306,8 +365,9 @@ static void MCLARegisterGraphicsDefaults(void) {
     CGFloat y = (CGRectGetMidY(self.bounds) - point.y) / radius;
     const CGFloat length = hypot(x, y);
     if (length > 1.0) { x /= length; y /= length; }
-    self.thumb.center = CGPointMake(CGRectGetMidX(self.bounds) + x * radius,
-                                    CGRectGetMidY(self.bounds) - y * radius);
+    const CGFloat thumbTravel=MIN(self.bounds.size.width,self.bounds.size.height)*.30;
+    self.thumb.center = CGPointMake(CGRectGetMidX(self.bounds) + x * thumbTravel,
+                                    CGRectGetMidY(self.bounds) - y * thumbTravel);
     if (self.onStick) self.onStick((float)x, (float)y, YES);
 }
 
@@ -783,7 +843,6 @@ static void MCLARegisterGraphicsDefaults(void) {
 @property(nonatomic, strong) NSArray<NSString*>* drivingActionKeys;
 @property(nonatomic, strong) UIVisualEffectView* fullPadPanel;
 @property(nonatomic, strong) NSMutableDictionary<NSString*, UIButton*>* paletteButtons;
-@property(nonatomic, strong) NSMutableDictionary<NSString*, NSDictionary*>* originalTouchAppearance;
 @property(nonatomic, strong) NSMutableDictionary<NSString*, UIView*>* layoutControls;
 @property(nonatomic, strong) NSMutableDictionary<NSString*, NSArray<NSNumber*>*>* layoutDefaults;
 @property(nonatomic, strong) NSMutableDictionary<NSString*, NSLayoutConstraint*>* layoutX;
@@ -1108,6 +1167,7 @@ static void MCLARegisterGraphicsDefaults(void) {
                        mask:(uint16_t)mask {
     UIButton* button = [self makeTouchButton:title tag:mask];
     button.accessibilityIdentifier = [@"mcla.palette." stringByAppendingString:key];
+    [self applyTouchControlAppearance:button];
     UITapGestureRecognizer* add = [[UITapGestureRecognizer alloc]
         initWithTarget:self action:@selector(addPaletteControl:)];
     add.numberOfTapsRequired = 2;
@@ -1144,15 +1204,6 @@ static void MCLARegisterGraphicsDefaults(void) {
         controlWidth, controlHeight,
     ]];
     self.layoutControls[key] = control;
-    if ([control isKindOfClass:UIButton.class]) {
-        if (!self.originalTouchAppearance) self.originalTouchAppearance=[NSMutableDictionary dictionary];
-        UIButton* button=(UIButton*)control;
-        self.originalTouchAppearance[key]=@{@"title":[button titleForState:UIControlStateNormal] ?: @"",
-            @"background":button.backgroundColor ?: UIColor.clearColor,
-            @"border":control.layer.borderColor ? [UIColor colorWithCGColor:control.layer.borderColor] : UIColor.clearColor,
-            @"borderWidth":@(control.layer.borderWidth), @"font":button.titleLabel.font,
-            @"lines":@(button.titleLabel.numberOfLines)};
-    }
     self.layoutDefaults[key] = @[@(x), @(y)];
     self.layoutX[key] = centerX;
     self.layoutY[key] = centerY;
@@ -1355,6 +1406,16 @@ static void MCLARegisterGraphicsDefaults(void) {
     if ([position isKindOfClass:NSArray.class] && position.count == 2 &&
         [position[0] isKindOfClass:NSNumber.class] &&
         [position[1] isKindOfClass:NSNumber.class]) return position;
+    if(MCLAControlOverhaulEnabled() && [key isEqual:@"handbrake"] && !saved[@"gas"] && !saved[@"handbrake"]) {
+        CGRect safe=[self touchSafeRect];
+        if(safe.size.height>0) {
+            NSArray<NSNumber*>* gasSize=[self touchSizeForKey:@"gas"];
+            NSArray<NSNumber*>* brakeSize=[self touchSizeForKey:@"handbrake"];
+            NSArray<NSNumber*>* gasPosition=MCLAOverhaulPositions()[@"gas"];
+            CGFloat y=gasPosition[1].doubleValue+(gasSize[1].doubleValue+brakeSize[1].doubleValue)*.5/safe.size.height+1/safe.size.height;
+            return @[gasPosition[0],@(y)];
+        }
+    }
     return MCLAControlOverhaulEnabled() ?
         (MCLAOverhaulPositions()[key] ?: self.layoutDefaults[key]) : self.layoutDefaults[key];
 }
@@ -1378,32 +1439,38 @@ static void MCLARegisterGraphicsDefaults(void) {
 }
 
 - (void)applyTouchControlAppearance:(UIView*)control {
-    const CGFloat radius = MIN(control.bounds.size.width, control.bounds.size.height) * 0.18;
-    if ([control isKindOfClass:MCLAVirtualStickView.class])
-        control.layer.cornerRadius = MIN(control.bounds.size.width, control.bounds.size.height) * 0.5;
-    else if ([control isKindOfClass:UIButton.class])
-        control.layer.cornerRadius = radius;
-    BOOL overhaul=MCLAControlOverhaulEnabled();
-    NSString* key=[control.accessibilityIdentifier stringByReplacingOccurrencesOfString:@"mcla.touch." withString:@""];
     if ([control isKindOfClass:MCLAVirtualStickView.class]) {
-        MCLAVirtualStickView* stick=(MCLAVirtualStickView*)control;
-        stick.caption.hidden=overhaul;
-        stick.layer.borderColor=(overhaul ? [UIColor colorWithRed:0.2 green:0.95 blue:1 alpha:0.8] : [UIColor colorWithWhite:1 alpha:0.4]).CGColor;
-        stick.layer.borderWidth=overhaul ? 2 : 1.2;
-    } else if ([control isKindOfClass:UIButton.class]) {
-        UIButton* button=(UIButton*)control;
-        NSDictionary* titles=@{@"gas":@"❯❯\nGAS", @"brake":@"❮❮\nBRAKE",
-            @"handbrake":@"↝\nGAS + HB", @"nitro":@"ϟ\nNITRO", @"pause":@"Ⅱ", @"camera":@"▣"};
-        NSDictionary* original=self.originalTouchAppearance[key];
-        [button setTitle:overhaul && titles[key] ? titles[key] : original[@"title"] forState:UIControlStateNormal];
-        button.titleLabel.numberOfLines=overhaul ? 2 : [original[@"lines"] integerValue];
-        button.titleLabel.textAlignment=NSTextAlignmentCenter;
-        button.titleLabel.font=overhaul ? [UIFont systemFontOfSize:MAX(12,MIN(26,control.bounds.size.height*.20)) weight:UIFontWeightHeavy] : original[@"font"];
-        button.layer.borderColor=(overhaul ? [UIColor colorWithRed:0.2 green:0.95 blue:1 alpha:0.8] : (UIColor*)original[@"border"]).CGColor;
-        button.backgroundColor=overhaul ? [UIColor colorWithWhite:0.015 alpha:0.35] : original[@"background"];
-        button.layer.borderWidth=overhaul ? 1.8 : [original[@"borderWidth"] doubleValue];
-        if (overhaul && [key isEqual:@"nitro"]) button.layer.cornerRadius=MIN(control.bounds.size.width,control.bounds.size.height)*.5;
+        control.layer.cornerRadius=MIN(control.bounds.size.width,control.bounds.size.height)*.5;
+        control.layer.borderWidth=0;
+        ((MCLAVirtualStickView*)control).caption.hidden=YES;
+        [control setNeedsLayout];
+        return;
     }
+    if (![control isKindOfClass:MCLAStaticTouchButton.class]) return;
+    NSString* key=[control.accessibilityIdentifier stringByReplacingOccurrencesOfString:@"mcla.touch." withString:@""];
+    key=[key stringByReplacingOccurrencesOfString:@"mcla.palette." withString:@""];
+    NSDictionary* labels=@{@"gas":@"GAS",@"brake":@"BRAKE / REV",@"handbrake":@"HANDBRAKE",
+        @"nitro":@"NITRO",@"ability":@"ABILITY",@"camera":@"CAMERA",@"pause":@"",
+        @"gps":@"MAP VIEW",@"hud":@"MAP",@"headlights":@"LIGHTS",@"weight":@"WEIGHT",
+        @"hydraulics":@"HYD",@"track_left":@"TRACK",@"track_right":@"TRACK",@"info":@"INFO",
+        @"horn":@"HORN",@"guide":@"GUIDE"};
+    BOOL combined=MCLAControlOverhaulEnabled() && [key isEqual:@"handbrake"] &&
+        [control.accessibilityIdentifier hasPrefix:@"mcla.touch."];
+    NSString* artKey=combined ? @"gas_handbrake" : key;
+    NSString* label=combined ? @"GAS +\nHANDBRAKE" : labels[key] ?: key.uppercaseString;
+    // The two zones remain independently editable. Render a joined pedal only
+    // while aligned; rearranged zones get their own complete rounded outline.
+    NSInteger segment=0;
+    UIView* gas=self.layoutControls[@"gas"], *drift=self.layoutControls[@"handbrake"];
+    BOOL docked=MCLAControlOverhaulEnabled() && [self isTouchControlDeployed:@"handbrake"] && gas && drift &&
+        fabs(CGRectGetMidX(gas.frame)-CGRectGetMidX(drift.frame))<3 &&
+        fabs(gas.bounds.size.width-drift.bounds.size.width)<3 &&
+        fabs(CGRectGetMaxY(gas.frame)-CGRectGetMinY(drift.frame))<12;
+    if(docked && [control.accessibilityIdentifier isEqual:@"mcla.touch.gas"]) segment=1;
+    if(docked && combined) segment=2;
+    MCLAStaticTouchButton* button=(MCLAStaticTouchButton*)control;
+    button.accessibilityLabel=combined ? @"Gas and handbrake" : [key isEqual:@"pause"] ? @"Pause" : label;
+    [button configureArtwork:artKey label:label segment:segment];
 }
 
 - (void)applyTouchLayout {
@@ -1478,6 +1545,7 @@ static void MCLARegisterGraphicsDefaults(void) {
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
     [self applyTouchLayout];
+    for (UIView* control in self.layoutControls.allValues) [self applyTouchControlAppearance:control];
     if (self.runtimeStartPending && self.view.bounds.size.width > self.view.bounds.size.height) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self startRuntimeAfterOrientation]; });
     }
