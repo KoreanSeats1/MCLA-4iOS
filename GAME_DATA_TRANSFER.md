@@ -37,12 +37,14 @@ file in case the title opens them later.
 
 ## Physical iPhone or iPad
 
-1. Sideload the release IPA, or build and install MCLA from the device Xcode project.
-2. Connect the device to the Mac and open Finder.
-3. Select the device, then **Files**, then the **MCLA** app.
-4. Drag the complete folder into the app and keep its name exactly
-   `MCLA_Game_Files`.
-5. Relaunch MCLA. The shell should report `GAME DATA READY`.
+Follow the [step-by-step installation and transfer guide](README.md#detailed-installation) for Sideloadly/AltStore, Mac Finder, Windows Apple Devices and on-device Files.
 
-The app enables iOS File Sharing and opening documents in place. Game data is
-never compiled into or signed inside the application.
+The exact visible destination is:
+
+**Files → Browse → On My iPhone / On My iPad → MCLA → MCLA_Game_Files**
+
+The app creates this directory automatically on first launch. The MCLA location in Files already represents its Documents directory: do not add a second Documents directory. `default.xex` must be directly inside `MCLA_Game_Files`, alongside all extracted archives and original subfolders. A ZIP/ISO left there is not a prepared game.
+
+Keep the app closed while copying, and reopen after transfer completes. With the core files detected and Metal available, the launcher shows **READY TO DRIVE**. Copying only the five readiness-check files does not supply all game content.
+
+The app enables iOS File Sharing and opening documents in place. Game data is never compiled into or signed inside the application.
