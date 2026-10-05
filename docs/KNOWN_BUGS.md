@@ -4,7 +4,7 @@ This list distinguishes confirmed reports from fixes awaiting broader verificati
 
 | Issue | Evidence/status | Workaround / next step |
 |---|---|---|
-| Blue distant light/traffic glows | User screenshot: nearby taillights red, distant glows blue. Root cause unresolved. Packed-color GPU tests passing does not validate the offending gameplay path. | Report a repeatable location/time; the build has a bounded color-source trace with Retail Mode off. No verified color workaround. |
+| Blue distant light/traffic glows | Live M5 pixel history shows two post-tonemap glow passes adding blue over a red signal. The control-overhaul test branch corrects their packed COLOR0 view; Metal tests pass, but updated gameplay verification is pending. The captured street-sign atlas itself is blue/white. | Compare red signals and taillight glows in the updated M5 test build. Broader effect coverage remains unverified. |
 | Two missing shader programs | VS `D866F0D1394908B8`, PS `F1DAD9A46DA1A834` observed in the latest 60 FPS M5 run; 4 adapter rejected draws. Not among the 603 packaged programs. | Some geometry/effects may be absent when this pair is needed. Recovery/offline compilation pending. |
 | Road texture flicker or shimmer | User-reported. Hidden material LOD sharpening was removed; full root-cause/regression verification outstanding. | Try the default scene resolution/filtering when reporting. Do not assume all flicker is a texture issue; depth/overlap must be checked. |
 | Missing or wrong checkpoint smoke | Prior race reports on both devices; shader coverage and packed-color corrections added. Correct red/yellow start/checkpoint colors across all routes unconfirmed. | Include race/location and whether the smoke is absent or wrong-colored. |

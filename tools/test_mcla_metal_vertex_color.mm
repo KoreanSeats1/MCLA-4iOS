@@ -14,17 +14,22 @@ struct U { uint4 color [[attribute(0)]]; };
 struct O { float4 pos [[position]]; float4 color; };
 float4 position(uint id) { float2 p[]={float2(-1,-1),float2(3,-1),float2(-1,3)}; return float4(p[id],0,1); }
 vertex O vf(F in [[stage_in]], uint id [[vertex_id]]) { return {position(id),in.color.zyxw}; }
+vertex O vg(F in [[stage_in]], uint id [[vertex_id]]) { return {position(id),in.color}; }
 vertex O vu(U in [[stage_in]], uint id [[vertex_id]]) { return {position(id),float4(in.color.zyxw)/255.f}; }
 fragment float4 pf(O in [[stage_in]]) { return in.color; }
 )METAL" options:nil error:&error]; assert(lib);
     auto queue=[device newCommandQueue];
     const std::array<std::array<uint8_t,4>,4> rgb{{{255,0,0,255},{255,255,0,255},{0,255,0,255},{0,0,255,255}}};
-    for (unsigned numeric : {0u,1u}) {
+    for (unsigned path : {0u,1u,2u,3u}) {
+        const unsigned numeric=path==1?1:0;
+        const uint64_t shader=path==2?0xF52B50DA9C0F8997ull:
+                              path==3?0x1B7B507E54AADA8Aull:0xACBA71021301E1DFull;
         auto vd=[MTLVertexDescriptor vertexDescriptor];
-        vd.attributes[0].format=mcla::metal::PackedColorVertexFormat(numeric,true);
+        vd.attributes[0].format=mcla::metal::PackedColorVertexFormat(numeric,
+            mcla::metal::PackedColorShaderCorrection(shader,true));
         vd.attributes[0].bufferIndex=0; vd.layouts[0].stride=4;
         auto pd=[MTLRenderPipelineDescriptor new]; pd.vertexDescriptor=vd;
-        pd.vertexFunction=[lib newFunctionWithName:numeric?@"vu":@"vf"];
+        pd.vertexFunction=[lib newFunctionWithName:path>=2?@"vg":numeric?@"vu":@"vf"];
         pd.fragmentFunction=[lib newFunctionWithName:@"pf"];
         pd.colorAttachments[0].pixelFormat=MTLPixelFormatRGBA8Unorm;
         auto pipeline=[device newRenderPipelineStateWithDescriptor:pd error:&error]; assert(pipeline);
@@ -46,5 +51,5 @@ fragment float4 pf(O in [[stage_in]]) { return in.color; }
             for(unsigned c=0;c<4;++c)assert(actual[c]==rgba[c]);
         }
     }
-    puts("Metal packed vertex colors passed: red, yellow, green, blue; normalized and integer fetch paths");
+    puts("Metal packed vertex colors passed: red, yellow, green, blue; seed, integer and both post-tonemap glow paths");
 } }

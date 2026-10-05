@@ -2004,7 +2004,7 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
   }
   bool planVertexFixups_ = true;
   uint32_t visualExperiments_ = MCLAGraphicsVisualExperiments();
-  std::array<uint64_t,64> colorAuditKeys_{};
+  std::array<uint64_t,128> colorAuditKeys_{};
   unsigned colorAuditCount_=0;
   bool InspectHUDDraw(const uint8_t* state,
       const ng::RegisterVertexDeclarationCommand& decl, uint32_t primitive,
@@ -2158,7 +2158,9 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
       unsigned step = data ? stride : streams_[e->stream].stride;
       if (!step)
         {Fail("stride");return {};}
-      auto format = VertexFormat(e->type, a.numeric, visualExperiments_ & mcla::metal::PackedVertexColor);
+      auto format = VertexFormat(e->type, a.numeric,
+          mcla::metal::PackedColorShaderCorrection(vs->info->hash,
+              visualExperiments_ & mcla::metal::PackedVertexColor));
       if (data && e->usage == 5 && format == MTLVertexFormatFloat &&
           a.components >= 2 && e->offset + 8 <= step)
         format = MTLVertexFormatFloat2;
