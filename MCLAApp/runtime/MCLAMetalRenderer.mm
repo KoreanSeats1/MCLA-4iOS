@@ -9,6 +9,7 @@
 #include "MCLAGeometryScratch.h"
 #include "MCLAVertexFixup.h"
 #include "MCLAPackedTexture.h"
+#include "MCLATextureSwizzle.h"
 #include "MCLAVisualExperiments.h"
 #include "MCLAControlOverhaul.h"
 #include "MCLAMetalVertexColor.h"
@@ -1264,24 +1265,18 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
       return nil;
     uint32_t sw = fetch.swizzle;
     auto format = gx::GetBaseFormat(fetch.format);
-    unsigned host = 0x688;
-    if (format == xn::TextureFormat::k_8 ||
-        format == xn::TextureFormat::k_DXT5A ||
-        format == xn::TextureFormat::k_32_FLOAT)
-      host = 0;
-    if (format == xn::TextureFormat::k_CTX1 ||
-        format == xn::TextureFormat::k_DXN)
-      host = 0x248;
+    const char* tiledOverride=std::getenv("MCLA_TILED_COLOR_SWIZZLE");
+    const bool tiledCorrection=!tiledOverride || std::strcmp(tiledOverride,"0")!=0;
+    unsigned host=mcla::metal::DecodedTextureHostSwizzle(
+        unsigned(format), fetch.tiled, unsigned(fetch.endianness), sw, tiledCorrection);
     MTLTextureSwizzle c[4];
     static const MTLTextureSwizzle map[] = {
         MTLTextureSwizzleRed,   MTLTextureSwizzleGreen, MTLTextureSwizzleBlue,
         MTLTextureSwizzleAlpha, MTLTextureSwizzleZero,  MTLTextureSwizzleOne};
-    for (int i = 0; i < 4; ++i) {
-      unsigned v = (sw >> (3 * i)) & 7;
-      v = v < 4 ? ((host >> (3 * v)) & 7) : (v & 5);
-      c[i] = map[std::min(v, 5u)];
-    }
-    if (sw == 0x688 && host == 0x688)
+    const uint32_t composed=mcla::metal::ComposeTextureSwizzle(sw,host);
+    for (int i = 0; i < 4; ++i)
+      c[i] = map[std::min((composed >> (3 * i)) & 7, 5u)];
+    if (composed == 0x688)
       return image;
     return [image
         newTextureViewWithPixelFormat:image.pixelFormat
@@ -2015,7 +2010,7 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
       const ng::RegisterVertexDeclarationCommand& decl, uint32_t primitive,
       uint32_t start, uint32_t count, bool indexed, int32_t baseVertex,
       uint32_t inlineAddress, uint32_t inlineStride,
-      mcla::metal::HudBounds* bounds = nullptr) {
+      mcla::metal::HudBounds* bounds = nullptr, uint32_t availableCount = 0) {
     if (count < 3 || count > (bounds ? 4096u : 6u)) return false;
     const ng::VertexElement* position = nullptr;
     for (unsigned i=0;i<decl.element_count;++i)
@@ -2023,8 +2018,9 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
         position = &decl.elements[i];
     if (!position || position->type != 0x2A23B9 || position->stream >= 17) return false;
     const auto bind = streams_[position->stream];
-    if (inlineAddress && uint64_t(count)*inlineStride > 64u*1024u*1024u) return false;
-    uint32_t address=inlineAddress, size=inlineAddress ? count*inlineStride : 0;
+    const uint32_t sourceCount=availableCount ? availableCount : count;
+    if (inlineAddress && uint64_t(sourceCount)*inlineStride > 64u*1024u*1024u) return false;
+    uint32_t address=inlineAddress, size=inlineAddress ? sourceCount*inlineStride : 0;
     const uint32_t stride=inlineAddress ? inlineStride : bind.stride;
     uint32_t offset=inlineAddress ? 0 : bind.offset;
     if (!inlineAddress) {
@@ -2358,6 +2354,27 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
         REXLOG_INFO("MCLA HUD MOVE draw={} group={} bounds={:.1f},{:.1f},{:.1f},{:.1f} scale={} dx={} dy={}",
             draws_,hudMove.name,bounds.left,bounds.top,bounds.right,bounds.bottom,hudMove.scale,hudMove.x,hudMove.y);
     }
+    // UI rims can be batched with other HUD elements. Classify independent
+    // triangles/quads when the complete batch spans multiple regions, keeping
+    // unrelated primitives in place and preserving their original draw order.
+    std::vector<mcla::metal::HudMove> hudSlices;
+    const uint32_t hudStep=primitive==13 ? 4 : primitive==4 ? 3 : 0;
+    if ((MCLAGraphicsVisualExperiments() & mcla::metal::RaisedDrivingHUD) &&
+        logicalTarget.width==1280 && logicalTarget.height==720 &&
+        vs->info->hash==0xF8B6972A1D56B354ULL && !fullScreenOverlay &&
+        hudMove.x==0 && hudMove.y==0 && hudStep && count<=256 && count%hudStep==0) {
+      bool anyMoved=false;
+      for(uint32_t first=0;first<count;first+=hudStep) {
+        mcla::metal::HudBounds bounds{};
+        mcla::metal::HudMove move{};
+        if(InspectHUDDraw(state,decl,primitive,start+first,hudStep,indexed,
+                          baseVertex,data,stride,&bounds,count))
+          move=mcla::metal::RaisedHudMove(bounds);
+        anyMoved |= move.x!=0 || move.y!=0;
+        hudSlices.push_back(move);
+      }
+      if(!anyMoved) hudSlices.clear();
+    }
     safe=mcla::metal::AnchoredHudFrame(safe,aw,hudMove);
     const double hudOffsetX=hudMove.x*viewportScaleX+safe.left*(1-hudMove.scale);
     const double hudOffsetY=hudMove.y*viewportScaleY+safe.top*(1-hudMove.scale);
@@ -2390,6 +2407,29 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
         F(state,10464),F(state,10468),F(state,10472),F(state,10476)};
     if (UpdateDynamic(blendColor_, blend))
       [encoder_ setBlendColorRed:blend[0] green:blend[1] blue:blend[2] alpha:blend[3]];
+    auto applyHudSlice=[&](const mcla::metal::HudMove& move) {
+      const auto frame=mcla::metal::AnchoredHudFrame(safe,aw,move);
+      const std::array<double,6> vp{
+          frame.left+(x*move.scale+move.x)*viewportScaleX,
+          frame.top+(y*move.scale+move.y)*viewportScaleY,
+          w*move.scale*viewportScaleX,h*move.scale*viewportScaleY,viewport[4],viewport[5]};
+      if(UpdateDynamic(viewport_,vp))
+        [encoder_ setViewport:MTLViewport{vp[0],vp[1],vp[2],vp[3],vp[4],vp[5]}];
+      const double ox=move.x*viewportScaleX+frame.left*(1-move.scale);
+      const double oy=move.y*viewportScaleY+frame.top*(1-move.scale);
+      auto edge=[&](unsigned value,bool horizontal) {
+        unsigned original=(horizontal ? frame.left : frame.top)+mcla::metal::ScaleEdge(value,
+            horizontal ? logicalTarget.width : logicalTarget.height,
+            horizontal ? frame.width : frame.height);
+        return mcla::metal::MovedHudEdge(original,move.scale,horizontal ? ox : oy,horizontal ? aw : ah);
+      };
+      unsigned left=edge(tl&32767,true),top=edge((tl>>16)&32767,false);
+      unsigned right=edge(br&32767,true),bottom=edge((br>>16)&32767,false);
+      if(right<=left || bottom<=top) return false;
+      std::array<NSUInteger,4> sr{left,top,right-left,bottom-top};
+      if(UpdateDynamic(scissor_,sr)) [encoder_ setScissorRect:MTLScissorRect{sr[0],sr[1],sr[2],sr[3]}];
+      return true;
+    };
     mark(2);
     for (unsigned s = 0; s < 17; ++s)
       if (needed[s]) {
@@ -2556,16 +2596,24 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
         lastIndexKey_.Remember(exactIndex);
         lastIndexUpload_=u; lastIndexCount_=indexCount;
       }
-      [encoder_ drawIndexedPrimitives:type
-                           indexCount:indexCount
-                            indexType:MTLIndexTypeUInt32
-                          indexBuffer:u.buffer
-                    indexBufferOffset:u.offset
-                        instanceCount:1
-                           baseVertex:baseVertex
-                         baseInstance:0];
-    } else
+      if(hudSlices.empty()) {
+        [encoder_ drawIndexedPrimitives:type indexCount:indexCount indexType:MTLIndexTypeUInt32
+            indexBuffer:u.buffer indexBufferOffset:u.offset instanceCount:1 baseVertex:baseVertex baseInstance:0];
+      } else {
+        const uint32_t sliceCount=primitive==13 ? 6 : 3;
+        for(size_t i=0;i<hudSlices.size();++i)
+          if(applyHudSlice(hudSlices[i]))
+            [encoder_ drawIndexedPrimitives:type indexCount:sliceCount indexType:MTLIndexTypeUInt32
+                indexBuffer:u.buffer indexBufferOffset:u.offset+i*sliceCount*sizeof(uint32_t)
+                instanceCount:1 baseVertex:baseVertex baseInstance:0];
+      }
+    } else if(hudSlices.empty()) {
       [encoder_ drawPrimitives:type vertexStart:start vertexCount:count];
+    } else {
+      for(size_t i=0;i<hudSlices.size();++i)
+        if(applyHudSlice(hudSlices[i]))
+          [encoder_ drawPrimitives:type vertexStart:start+i*hudStep vertexCount:hudStep];
+    }
     ++draws_;
     if(gpuPassTrace_)gpuPassTrace_->Draw(vs->info->hash,ps?ps->info->hash:0);
     mark(5);if(sample){++profileSamples_;++frameProfileSamples_;}

@@ -8,6 +8,11 @@ int main() {
     assert(RaisedHudMove({940,510,1190,670}).scale == 1.f);
     assert(RaisedHudMove({0,0,1280,720}).y == 0); // fade/menu backgrounds
     assert(RaisedHudMove({75,460,1190,685}).y == 0); // mixed HUD batch
+    // Each independent quad in a mixed batch can retain its own transform.
+    const HudBounds quads[]={{75,460,305,685},{940,510,1190,670},{500,100,700,250}};
+    assert(RaisedHudMove(quads[0]).y!=0);
+    assert(RaisedHudMove(quads[1]).right && RaisedHudMove(quads[1]).y!=0);
+    assert(RaisedHudMove(quads[2]).y==0);
     assert(RaisedHudMove({500,500,600,650}).y == 0); // world/center overlays
     assert(RaisedHudMove({75,100,305,330}).y == 0); // already at destination
     assert(RaisedHudMove({75,430,305,685}).y == 0); // crosses capture boundary
