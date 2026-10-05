@@ -2332,7 +2332,7 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
     const bool fullScreenOverlay = safeFrameDraw &&
         (visualExperiments_ & mcla::metal::FullScreenFades) &&
         InspectHUDDraw(state,decl,primitive,start,count,indexed,baseVertex,data,stride);
-    const auto safe = safeFrameDraw && !fullScreenOverlay
+    auto safe = safeFrameDraw && !fullScreenOverlay
         ? mcla::metal::HudSafeFrame(aw, ah)
         : mcla::metal::SafeFrame{0,0,aw,ah};
     const double viewportScaleX = double(safe.width)/logicalTarget.width;
@@ -2359,6 +2359,7 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
         REXLOG_INFO("MCLA HUD MOVE draw={} group={} bounds={:.1f},{:.1f},{:.1f},{:.1f} scale={} dx={} dy={}",
             draws_,hudMove.name,bounds.left,bounds.top,bounds.right,bounds.bottom,hudMove.scale,hudMove.x,hudMove.y);
     }
+    safe=mcla::metal::AnchoredHudFrame(safe,aw,hudMove);
     const double hudOffsetX=hudMove.x*viewportScaleX+safe.left*(1-hudMove.scale);
     const double hudOffsetY=hudMove.y*viewportScaleY+safe.top*(1-hudMove.scale);
     const std::array<double,6> viewport{

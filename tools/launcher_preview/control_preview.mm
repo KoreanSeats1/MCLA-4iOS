@@ -118,7 +118,8 @@ bool MCLAControlPreviewRightTrigger();
     const mcla::metal::HudBounds bounds[]={{72,440,330,710},{900,480,1260,710}};
     for(int i=0;i<2;++i) {
         auto b=bounds[i]; auto move=mcla::metal::RaisedHudMove(b);
-        self.panels[i].frame=CGRectMake(left+(b.left*move.scale+move.x)*scale,top+(b.top*move.scale+move.y)*scale,
+        self.panels[i].frame=CGRectMake((move.right ? safe.size.width-1280*scale : 0)+(b.left*move.scale+move.x)*scale,
+            (b.top*move.scale+move.y)*scale,
             (b.right-b.left)*move.scale*scale,(b.bottom-b.top)*move.scale*scale);
     }
     self.studyCaption.frame=CGRectMake(left+300*scale,top+20*scale,680*scale,20*scale);
