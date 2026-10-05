@@ -6,6 +6,14 @@
 #include <cassert>
 #import "MCLAControlArtwork.h"
 bool MCLAControlPreviewRightTrigger();
+bool MCLAControlPreviewLeftTrigger();
+uint16_t MCLAControlPreviewButtons();
+@interface UIView (SlidingTest)
+- (NSUInteger)inputsAtPoint:(CGPoint)point previous:(NSUInteger)previous;
+- (void)moveFinger:(NSValue*)key toPoint:(CGPoint)point;
+- (void)endFinger:(NSValue*)key;
+- (void)reset;
+@end
 @interface MCLAViewController (ControlPreview)
 - (void)refreshBringupStatus;
 - (void)prepareGameDataFolderIfNeeded;
@@ -101,14 +109,14 @@ bool MCLAControlPreviewRightTrigger();
     [defaults setObject:baseline forKey:@"MCLATouchLayoutPositions"];
     [self resetTouchLayout];
     assert([[defaults dictionaryForKey:@"MCLATouchLayoutPositions"] isEqual:baseline]);
-    assert([[defaults arrayForKey:@"MCLATouchActiveControlsOverhaul"] count]==4);
+    assert([[defaults arrayForKey:@"MCLATouchActiveControlsOverhaul"] count]==12);
     [defaults setBool:NO forKey:@"MCLAControlOverhaulTestEnabled"];
     [self refreshTouchInputForGameVisible:YES];
     [self.view layoutIfNeeded];
     assert([[gas titleForState:UIControlStateNormal] isEqual:@"GAS\nRT"]);
     [defaults setBool:YES forKey:@"MCLAControlOverhaulTestEnabled"];
     [self refreshTouchInputForGameVisible:YES];
-    NSLog(@"MCLA_CONTROL_PREVIEW PASS: cached normal/pressed/disabled artwork, edit gestures, combined pedal overlap/release and isolated layout preferences");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),dispatch_get_main_queue(),^{ [self verifySlidingControls]; });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),dispatch_get_main_queue(),^{
         [self.view layoutIfNeeded];
         UIGraphicsImageRenderer* renderer=[[UIGraphicsImageRenderer alloc] initWithSize:self.view.bounds.size];
@@ -120,8 +128,8 @@ bool MCLAControlPreviewRightTrigger();
         UIGraphicsImageRenderer* sheet=[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(1280,640)];
         UIImage* atlas=[sheet imageWithActions:^(UIGraphicsImageRendererContext* context) {
             [[UIColor colorWithRed:.025 green:.06 blue:.08 alpha:1] setFill]; CGContextFillRect(context.CGContext,CGRectMake(0,0,1280,640));
-            NSArray* keys=@[@"pause",@"camera",@"nitro",@"ability",@"brake",@"handbrake",@"gps",@"hud",@"gas",@"gas_handbrake"];
-            NSArray* labels=@[@"",@"CAMERA",@"NITRO",@"ABILITY",@"BRAKE / REV",@"HANDBRAKE",@"MAP VIEW",@"MAP",@"GAS",@"GAS +\nHANDBRAKE"];
+            NSArray* keys=@[@"pause",@"camera",@"nitro",@"ability",@"brake",@"weight",@"headlights",@"track_left",@"track_right",@"gas_handbrake"];
+            NSArray* labels=@[@"",@"CAMERA",@"NITRO",@"ABILITY",@"BRAKE / REV",@"WEIGHT",@"LIGHTS",@"TRACK BACK",@"TRACK NEXT",@"GAS +\nHANDBRAKE"];
             for(int state=0;state<3;++state) {
                 for(NSUInteger i=0;i<keys.count;++i) {
                     UIImage* asset=MCLAControlArtwork(keys[i],labels[i],CGSizeMake(108,145),state==1,state!=2,0);
@@ -134,6 +142,35 @@ bool MCLAControlPreviewRightTrigger();
         [UIImagePNGRepresentation(atlas) writeToFile:[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/button-artwork.png"] atomically:YES];
         NSLog(@"MCLA_CONTROL_PREVIEW snapshot %@",path);
     });
+}
+- (void)verifySlidingControls {
+    [self.view layoutIfNeeded];
+    NSDictionary* controls=[self valueForKey:@"layoutControls"];
+    UIButton* gas=controls[@"gas"],*hb=controls[@"handbrake"];
+    [self refreshTouchInputForGameVisible:YES];
+    UIView* router=[self valueForKey:@"slideControls"];
+    UIButton* brake=controls[@"brake"], *weight=controls[@"weight"];
+    CGPoint gp=[gas convertPoint:CGPointMake(gas.bounds.size.width/2,gas.bounds.size.height/2) toView:router];
+    CGPoint hp=[hb convertPoint:CGPointMake(hb.bounds.size.width/2,hb.bounds.size.height/2) toView:router];
+    CGPoint bp=[brake convertPoint:CGPointMake(brake.bounds.size.width/2,brake.bounds.size.height/2) toView:router];
+    CGPoint wp=[weight convertPoint:CGPointMake(weight.bounds.size.width/2,weight.bounds.size.height/2) toView:router];
+    CGPoint blend=CGPointMake((hp.x+bp.x)/2,(hp.y+bp.y)/2);
+    NSValue* finger=[NSValue valueWithPointer:(void*)1],*second=[NSValue valueWithPointer:(void*)2];
+    assert([router hitTest:gp withEvent:nil]==router);
+    [router moveFinger:finger toPoint:gp]; assert(MCLAControlPreviewRightTrigger() && !MCLAControlPreviewLeftTrigger());
+    [router moveFinger:finger toPoint:hp]; assert(MCLAControlPreviewRightTrigger() && (MCLAControlPreviewButtons() & 0x1000));
+    [router moveFinger:finger toPoint:blend]; assert(MCLAControlPreviewRightTrigger() && MCLAControlPreviewLeftTrigger() && (MCLAControlPreviewButtons() & 0x1000));
+    [router moveFinger:finger toPoint:bp]; assert(!MCLAControlPreviewRightTrigger() && MCLAControlPreviewLeftTrigger());
+    [router moveFinger:finger toPoint:wp]; assert(MCLAControlPreviewLeftTrigger() && (MCLAControlPreviewButtons() & 0x2000));
+    [router moveFinger:finger toPoint:gp]; assert(MCLAControlPreviewRightTrigger() && !(MCLAControlPreviewButtons() & 0x2000));
+    [router moveFinger:finger toPoint:wp]; assert(MCLAControlPreviewRightTrigger() && (MCLAControlPreviewButtons() & 0x2000));
+    [router moveFinger:second toPoint:bp]; assert(MCLAControlPreviewLeftTrigger());
+    [router endFinger:finger]; assert(!MCLAControlPreviewRightTrigger() && MCLAControlPreviewLeftTrigger() && !(MCLAControlPreviewButtons() & 0x2000));
+    [router reset]; assert(!MCLAControlPreviewRightTrigger() && !MCLAControlPreviewLeftTrigger() && !MCLAControlPreviewButtons());
+    // Sliding off all zones releases the previous driving state as well.
+    [router moveFinger:finger toPoint:gp]; [router moveFinger:finger toPoint:CGPointMake(600,50)];
+    assert(!MCLAControlPreviewRightTrigger()); [router endFinger:finger];
+    NSLog(@"MCLA_CONTROL_PREVIEW PASS: cached normal/pressed/disabled artwork, edit gestures, combined pedal overlap/release and isolated layout preferences, continuous slides, three-input blend, weight hold/release, independent fingers and cancellation");
 }
 - (void)refreshBringupStatus {
     if (!self.study) { [super refreshBringupStatus]; return; }

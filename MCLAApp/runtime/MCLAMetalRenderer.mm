@@ -2323,12 +2323,13 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
     // "no depth" heuristic misses the minimap and speedometer. Keep this
     // authored 2D program in a centered 16:9 frame; the camera scene and
     // post-processing retain full device aspect.
+    // The outline/stencil layers share the audited HUD vertex transform but
+    // use different fragment/blend states. Frame and move those layers with
+    // the textured fill, rather than leaving the rim at its original location.
     const bool safeFrameDraw = hudSafeFrameProbe_ &&
         logicalTarget.width == 1280 && logicalTarget.height == 720 &&
         (uint64_t(aw)*720 != uint64_t(ah)*1280) &&
-        vs->info->hash == 0xF8B6972A1D56B354ULL &&
-        ps && ps->info->hash == 0x5CA2EECD341441FFULL &&
-        (R(state,11844) >> 31);
+        vs->info->hash == 0xF8B6972A1D56B354ULL;
     const bool fullScreenOverlay = safeFrameDraw &&
         (visualExperiments_ & mcla::metal::FullScreenFades) &&
         InspectHUDDraw(state,decl,primitive,start,count,indexed,baseVertex,data,stride);
@@ -2348,9 +2349,7 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
     mcla::metal::HudMove hudMove{};
     if ((MCLAGraphicsVisualExperiments() & mcla::metal::RaisedDrivingHUD) &&
         logicalTarget.width == 1280 && logicalTarget.height == 720 &&
-        vs->info->hash == 0xF8B6972A1D56B354ULL &&
-        ps && ps->info->hash == 0x5CA2EECD341441FFULL &&
-        (R(state,11844) >> 31) && !fullScreenOverlay) {
+        vs->info->hash == 0xF8B6972A1D56B354ULL && !fullScreenOverlay) {
       mcla::metal::HudBounds bounds{};
       if (InspectHUDDraw(state,decl,primitive,start,count,indexed,
                                baseVertex,data,stride,&bounds))

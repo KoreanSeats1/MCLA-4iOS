@@ -12,6 +12,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include "MCLAMetalPresentation.h"
 #import "MCLAControlArtwork.h"
+#import "MCLASlidingControls.h"
 
 // This test branch enables the in-game experiment by default. Dedicated
 // switches leave the original branch’s control preferences untouched.
@@ -24,10 +25,22 @@ static NSString* MCLATouchPreference(NSString* key) {
     return MCLAControlOverhaulEnabled() ? [key stringByAppendingString:@"Overhaul"] : key;
 }
 static NSDictionary* MCLAOverhaulPositions(void) {
-    return @{@"steer": @[@0.14,@0.80], @"nitro": @[@0.065,@0.53],
-        @"gas": @[@0.925,@0.66], @"handbrake": @[@0.925,@0.875],
-        @"brake": @[@0.80,@0.84], @"camera": @[@0.955,@0.065],
-        @"pause": @[@0.045,@0.065]};
+    // Approved layout captured from the M5 on October 5, 2026.
+    return @{@"steer": @[@0.1058238636363636,@0.8178947368421052],
+        @"nitro": @[@0.1338778409090909,@0.6042105263157894],
+        @"gas": @[@0.925,@0.66],
+        @"handbrake": @[@0.925,@0.875],
+        @"brake": @[@0.8034446022727273,@0.8536842105263158],
+        @"camera": @[@0.955,@0.065],
+        @"pause": @[@0.045,@0.065],
+        @"weight": @[@0.8387784090909091,@0.7231578947368421],
+        @"ability": @[@0.05362215909090909,@0.6547368421052632],
+        @"hud": @[@0.0390625,@0.3257894736842105],
+        @"track_right": @[@0.9417613636363636,@0.9647368421052631],
+        @"track_left": @[@0.8863636363636364,@0.9652631578947368],
+        @"headlights": @[@0.9428267045454546,@0.5131578947368421],
+        @"gps": @[@0.08238636363636363,@0.3615789473684211],
+        @"horn": @[@0.03373579545454546,@0.9652631578947368]};
 }
 static NSDictionary* MCLAOverhaulSizes(void) {
     return @{@"steer": @[@230,@230], @"nitro": @[@114,@114],
@@ -36,7 +49,7 @@ static NSDictionary* MCLAOverhaulSizes(void) {
 }
 
 static NSArray* MCLAOverhaulControls(void) {
-    return @[@"nitro", @"handbrake", @"camera", @"pause"];
+    return @[@"nitro", @"handbrake", @"camera", @"pause", @"hud", @"ability", @"track_left", @"track_right", @"gps", @"headlights", @"weight", @"horn"];
 }
 
 static NSArray<NSString*>* MCLAOutputOptionNames(void) {
@@ -833,6 +846,10 @@ static void MCLARegisterGraphicsDefaults(void) {
 @property(nonatomic, copy) void (^pendingSaveConfirm)(void);
 @property(nonatomic, copy) void (^pendingSaveCancel)(void);
 @property(nonatomic, strong) UIStackView* touchControls;
+@property(nonatomic, strong) MCLASlidingControls* slideControls;
+@property(nonatomic, assign) NSUInteger slideInputs;
+@property(nonatomic, assign) uint16_t directButtons;
+@property(nonatomic, assign) BOOL directBrakeHeld;
 @property(nonatomic, assign) BOOL overhaulGasHeld;
 @property(nonatomic, assign) BOOL overhaulHandbrakeHeld;
 @property(nonatomic, assign) BOOL overhaulWasEnabled;
@@ -1469,7 +1486,7 @@ static void MCLARegisterGraphicsDefaults(void) {
     if(docked && [control.accessibilityIdentifier isEqual:@"mcla.touch.gas"]) segment=1;
     if(docked && combined) segment=2;
     MCLAStaticTouchButton* button=(MCLAStaticTouchButton*)control;
-    button.accessibilityLabel=combined ? @"Gas and handbrake" : [key isEqual:@"pause"] ? @"Pause" : label;
+    button.accessibilityLabel=combined ? @"Gas and handbrake" : [key isEqual:@"pause"] ? @"Pause / Start" : label;
     [button configureArtwork:artKey label:label segment:segment];
 }
 
@@ -1546,6 +1563,8 @@ static void MCLARegisterGraphicsDefaults(void) {
     [super viewDidLayoutSubviews];
     [self applyTouchLayout];
     for (UIView* control in self.layoutControls.allValues) [self applyTouchControlAppearance:control];
+    self.slideControls.frame=self.view.bounds;
+    [self.slideControls setNeedsDisplay];
     if (self.runtimeStartPending && self.view.bounds.size.width > self.view.bounds.size.height) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self startRuntimeAfterOrientation]; });
     }
@@ -1604,7 +1623,7 @@ static void MCLARegisterGraphicsDefaults(void) {
         return;
     }
     self.editingTouchLayout = !self.editingTouchLayout;
-    if (self.editingTouchLayout) { MCLAResetVirtualGamepad();
+    if (self.editingTouchLayout) { MCLAResetVirtualGamepad(); [self clearSlidingInputs];
         self.overhaulGasHeld=NO; self.overhaulHandbrakeHeld=NO; }
     for (UIView* control in self.layoutControls.allValues) {
         for (UIGestureRecognizer* recognizer in control.gestureRecognizers)
@@ -1668,33 +1687,43 @@ static void MCLARegisterGraphicsDefaults(void) {
     return button;
 }
 
+// Merge routed fingers with the optional full-pad buttons so releasing one
+// input source cannot release a second finger's held input.
+- (void)updateDrivingInputs {
+    MCLASetVirtualGamepadTrigger(true,self.overhaulGasHeld || self.overhaulHandbrakeHeld || (self.slideInputs & 1));
+    MCLASetVirtualGamepadTrigger(false,self.directBrakeHeld || (self.slideInputs & 4));
+    MCLASetVirtualGamepadButton(MCLA_GAMEPAD_A,(self.directButtons & MCLA_GAMEPAD_A) || (self.slideInputs & 2));
+    MCLASetVirtualGamepadButton(MCLA_GAMEPAD_B,(self.directButtons & MCLA_GAMEPAD_B) || (self.slideInputs & 8));
+}
 - (void)gamepadButtonDown:(UIButton*)sender {
     if (self.editingTouchLayout) return;
+    self.directButtons |= (uint16_t)sender.tag;
     MCLASetVirtualGamepadButton((uint16_t)sender.tag, true);
-    if (MCLAControlOverhaulEnabled() && [sender.accessibilityIdentifier isEqual:@"mcla.touch.handbrake"]) {
+    if (MCLAControlOverhaulEnabled() && [sender.accessibilityIdentifier isEqual:@"mcla.touch.handbrake"])
         self.overhaulHandbrakeHeld=YES;
-        MCLASetVirtualGamepadTrigger(true, true);
-    }
+    [self updateDrivingInputs];
 }
-
 - (void)gamepadButtonUp:(UIButton*)sender {
+    self.directButtons &= ~(uint16_t)sender.tag;
     MCLASetVirtualGamepadButton((uint16_t)sender.tag, false);
-    if (MCLAControlOverhaulEnabled() && [sender.accessibilityIdentifier isEqual:@"mcla.touch.handbrake"]) {
+    if ([sender.accessibilityIdentifier isEqual:@"mcla.touch.handbrake"])
         self.overhaulHandbrakeHeld=NO;
-        MCLASetVirtualGamepadTrigger(true, self.overhaulGasHeld);
-    }
+    [self updateDrivingInputs];
 }
-
 - (void)pedalDown:(UIButton*)sender {
     if (self.editingTouchLayout) return;
-    if (sender.tag == 2) self.overhaulGasHeld=YES;
-    MCLASetVirtualGamepadTrigger(sender.tag == 2, true);
+    if (sender.tag==2) self.overhaulGasHeld=YES; else self.directBrakeHeld=YES;
+    [self updateDrivingInputs];
 }
-
 - (void)pedalUp:(UIButton*)sender {
-    if (sender.tag == 2) self.overhaulGasHeld=NO;
-    BOOL combinedHeld=MCLAControlOverhaulEnabled() && self.overhaulHandbrakeHeld;
-    MCLASetVirtualGamepadTrigger(sender.tag == 2, sender.tag == 2 && combinedHeld);
+    if (sender.tag==2) self.overhaulGasHeld=NO; else self.directBrakeHeld=NO;
+    [self updateDrivingInputs];
+}
+- (void)clearSlidingInputs {
+    self.slideInputs=0; self.directButtons=0; self.directBrakeHeld=NO;
+    self.overhaulGasHeld=NO; self.overhaulHandbrakeHeld=NO;
+    [self.slideControls reset];
+    [self updateDrivingInputs];
 }
 
 - (void)toggleFullPad:(id)sender {
@@ -1759,6 +1788,7 @@ static void MCLARegisterGraphicsDefaults(void) {
 - (void)refreshTouchInputForGameVisible:(BOOL)gameVisible {
     if (self.overhaulWasEnabled != MCLAControlOverhaulEnabled()) {
         MCLAResetVirtualGamepad();
+        [self clearSlidingInputs];
         self.overhaulGasHeld=NO; self.overhaulHandbrakeHeld=NO;
         self.overhaulWasEnabled=MCLAControlOverhaulEnabled();
     }
@@ -1771,6 +1801,7 @@ static void MCLARegisterGraphicsDefaults(void) {
         UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
     if (!active && self.touchInputActive) {
         MCLAResetVirtualGamepad();
+        [self clearSlidingInputs];
         self.overhaulGasHeld=NO; self.overhaulHandbrakeHeld=NO;
     }
     if (!active && self.editingTouchLayout) {
@@ -1808,6 +1839,21 @@ static void MCLARegisterGraphicsDefaults(void) {
             (void)stop;
             button.alpha = [self isTouchControlDeployed:key] ? 0.42 : 1.0;
         }];
+    if (!self.slideControls) {
+        self.slideControls=[[MCLASlidingControls alloc] initWithFrame:self.view.bounds];
+        self.slideControls.controls=self.layoutControls;
+        __weak MCLAViewController* weakSelf=self;
+        self.slideControls.changed=^(NSUInteger inputs) {
+            MCLAViewController* owner=weakSelf;
+            owner.slideInputs=inputs; [owner updateDrivingInputs];
+        };
+        [self.view addSubview:self.slideControls];
+    }
+    BOOL sliding=active && MCLAControlOverhaulEnabled() && !self.editingTouchLayout && !full;
+    if (!sliding && !self.slideControls.hidden) [self.slideControls reset];
+    self.slideControls.hidden=!sliding;
+    self.slideControls.frame=self.view.bounds;
+    [self.slideControls setNeedsDisplay];
     self.fullPadPanel.hidden = !full;
     self.cameraStick.userInteractionEnabled = full;
 
@@ -1846,6 +1892,8 @@ static void MCLARegisterGraphicsDefaults(void) {
 - (void)appWillResignActive:(NSNotification*)notification {
     (void)notification;
     MCLAGraphicsSetApplicationActive(false);
+    MCLAResetVirtualGamepad();
+    [self clearSlidingInputs];
 }
 
 - (void)appDidEnterBackground:(NSNotification*)notification {
@@ -1855,6 +1903,7 @@ static void MCLARegisterGraphicsDefaults(void) {
     [self.motionManager stopDeviceMotionUpdates];
     self.touchInputActive = NO;
     MCLAResetVirtualGamepad();
+    [self clearSlidingInputs];
     [self hideGameplayToolbar];
     [self.panel setSceneActive:NO];
 }
@@ -1881,6 +1930,7 @@ static void MCLARegisterGraphicsDefaults(void) {
     [self.motionManager stopDeviceMotionUpdates];
     [NSNotificationCenter.defaultCenter removeObserver:self];
     MCLAResetVirtualGamepad();
+    [self clearSlidingInputs];
     UIApplication.sharedApplication.idleTimerDisabled = NO;
 }
 

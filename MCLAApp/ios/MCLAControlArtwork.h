@@ -37,8 +37,35 @@ static void MCLAControlChevron(CGContextRef c, CGFloat y, BOOL up) {
 static void MCLAControlIcon(CGContextRef c, NSString* key) {
     CGContextSetFillColorWithColor(c,MCLAControlInk(1).CGColor);
     if([key isEqual:@"pause"]) {
-        CGContextFillRect(c,CGRectMake(-.26,-.34,.15,.68));
-        CGContextFillRect(c,CGRectMake(.11,-.34,.15,.68));
+        CGContextFillRect(c,CGRectMake(-.37,-.30,.12,.60));
+        CGContextFillRect(c,CGRectMake(-.16,-.30,.12,.60));
+        const CGPoint play[]={{.10,-.30},{.43,0},{.10,.30}};
+        CGContextAddPath(c,MCLAControlPolyline(play,3,YES).CGPath); CGContextFillPath(c);
+    } else if([key isEqual:@"weight"]) {
+        UIBezierPath* car=[UIBezierPath bezierPathWithRoundedRect:CGRectMake(-.17,-.31,.34,.62) cornerRadius:.10];
+        MCLAControlStroke(c,car,.045,1);
+        MCLAControlStroke(c,[UIBezierPath bezierPathWithRoundedRect:CGRectMake(-.12,-.17,.24,.17) cornerRadius:.03],.035,1);
+        for(int sign : {-1,1}) {
+            const CGPoint arrow[]={{sign*.25,-.10},{sign*.40,0},{sign*.25,.10}};
+            MCLAControlStroke(c,MCLAControlPolyline(arrow,3,NO),.045,1);
+        }
+    } else if([key isEqual:@"headlights"]) {
+        UIBezierPath* lamp=[UIBezierPath bezierPath]; [lamp moveToPoint:CGPointMake(.08,-.26)];
+        [lamp addCurveToPoint:CGPointMake(.08,.26) controlPoint1:CGPointMake(.55,-.26) controlPoint2:CGPointMake(.55,.26)];
+        [lamp closePath]; MCLAControlStroke(c,lamp,.045,1);
+        for(int i=0;i<4;++i) {
+            CGFloat y=-.24+i*.16; const CGPoint ray[]={{-.38,y+.07},{-.05,y}};
+            MCLAControlStroke(c,MCLAControlPolyline(ray,2,NO),.045,1);
+        }
+    } else if([key isEqual:@"track_left"] || [key isEqual:@"track_right"]) {
+        CGContextSaveGState(c);
+        if([key isEqual:@"track_right"]) CGContextScaleCTM(c,-1,1);
+        CGContextFillRect(c,CGRectMake(-.38,-.26,.07,.52));
+        const CGPoint triangle[]={{-.23,0},{.04,-.26},{.04,.26}};
+        CGContextAddPath(c,MCLAControlPolyline(triangle,3,YES).CGPath); CGContextFillPath(c);
+        const CGPoint second[]={{.04,0},{.31,-.26},{.31,.26}};
+        CGContextAddPath(c,MCLAControlPolyline(second,3,YES).CGPath); CGContextFillPath(c);
+        CGContextRestoreGState(c);
     } else if([key isEqual:@"camera"]) {
         UIBezierPath* body=[UIBezierPath bezierPathWithRoundedRect:CGRectMake(-.42,-.25,.84,.56) cornerRadius:.06];
         CGContextAddPath(c,body.CGPath); CGContextFillPath(c);
