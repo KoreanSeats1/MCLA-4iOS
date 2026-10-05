@@ -10,6 +10,25 @@ See the [README attribution table](README.md#credits-attribution-and-license) an
 
 ReXGlue also explicitly acknowledges [Tom (crack)](https://github.com/tomcl7), [Loreaxe](https://github.com/Loreaxe), [Mystixor](https://github.com/Mystixor), [Graine25](https://github.com/Graine25), [Carlos Estrague](https://github.com/mrcmunir), [sanjay900](https://github.com/sanjay900), [Toby](https://github.com/TbyDtch) and [Roxxsen](https://github.com/Roxxsen). Consult its upstream README for individual roles.
 
+## Project roles
+
+| Developer / project | Contribution and link |
+|---|---|
+| **mzzvxm — LARecomp** | Original MCLA static recompilation, title reverse engineering, manifests, named function hints, engine hooks and desktop runtime integration. [Developer](https://github.com/mzzvxm) · [LARecomp](https://github.com/mzzvxm/LARecomp) |
+| **BadassBaboon — midnightclub** | Two-path real-delta fixes, frame-pacing research, continuous-time camera/chassis work and high-frame-rate physics research carried into LARecomp and adapted here. [Developer](https://github.com/BadassBaboon) · [Fork](https://github.com/BadassBaboon/midnightclub) |
+| **Graine25 and LARecomp contributors** | Upstream contributions recorded in LARecomp history. [Developer](https://github.com/Graine25) · [Contributor history](https://github.com/mzzvxm/LARecomp/graphs/contributors) |
+| **Foxxyyy — CodeX.Games.MCLA** | RAGE/RSC5 resource, type-layout and string-database reverse-engineering work credited by LARecomp. [Developer](https://github.com/Foxxyyy) · [Project](https://github.com/Foxxyyy/CodeX.Games.MCLA) |
+| **Tom Clay and the ReXGlue team** | Static recompilation toolkit, runtime and guest-service infrastructure. [ReXGlue](https://github.com/rexglue/rexglue-sdk) · [Team/contributors](https://github.com/rexglue/rexglue-sdk/graphs/contributors) |
+| **KoreanSeats1 — Theft4 and this iOS adaptation** | Apple host/runtime integration and the isolated native-renderer foundation; MCLA title adapter, direct Metal rendering, controls/settings, diagnostics, beta integration and device testing. [Profile](https://github.com/KoreanSeats1) · [Theft4](https://github.com/KoreanSeats1/Theft4) |
+| **OZORDI / LibertyRecomp contributors** | Earlier static-recompilation and title-renderer lineage underlying Theft4. [LibertyRecomp](https://github.com/OZORDI/LibertyRecomp) |
+| **hedge-dev / XenonRecomp and rexdex** | AOT/code-generation research acknowledged by ReXGlue. [XenonRecomp](https://github.com/hedge-dev/XenonRecomp) · [rexdex recompiler](https://github.com/rexdex/recompiler) |
+| **Ben Vanik, Xenia developers and contributors** | Xbox 360 runtime/GPU research, formats, decoding and compatibility foundations inherited by the toolchain. [Xenia](https://github.com/xenia-project/xenia) · [Contributors](https://github.com/xenia-project/xenia/graphs/contributors) |
+| **XeniOS and Xenia Edge contributors** | Apple/ARM64 reference work and audited Xenos semantics used during development. [XeniOS](https://github.com/xenios-jp/XeniOS) · [Xenia Edge](https://github.com/has207/xenia-edge) |
+| **hedge-dev and sonicnext-dev — XenosRecomp** | Shader recompilation/compiler lineage adapted by the offline toolchain. [Original](https://github.com/hedge-dev/XenosRecomp) · [Fork](https://github.com/sonicnext-dev/XenosRecomp) |
+| **AMD / GPUOpen FSR contributors** | FSR 1 EASU/RCAS spatial upscaling algorithms and reference integration. [FSR](https://github.com/GPUOpen-Effects/FidelityFX-FSR) |
+| **iryoku / SMAA authors** | SMAA research/code for the separate developer lab; not enabled in the standard release. [SMAA](https://github.com/iryoku/smaa) |
+| **Rockstar San Diego and the original game developers** | Created Midnight Club: Los Angeles. The game and its content remain theirs. [Rockstar Games](https://www.rockstargames.com/) |
+
 ## Public contributor profiles
 
 Collected 2026-10-05 from public GitHub contributor lists. Full license texts are retained in [licenses](licenses). GitHub lists cannot recover every anonymous contribution, artwork credit, non-code contribution or historical author; upstream AUTHORS, notices and Git history remain authoritative. This catalog is evidence-based, not a claim to exhaust every human contribution.
