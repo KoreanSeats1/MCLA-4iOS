@@ -26,8 +26,8 @@ bool MCLAControlPreviewRightTrigger();
 - (void)prepareGameDataFolderIfNeeded { [self setValue:NSHomeDirectory() forKey:@"gameRoot"]; }
 - (UIInterfaceOrientationMask)supportedInterfaceOrientations { return UIInterfaceOrientationMaskLandscape; }
 - (void)viewDidLoad {
-    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"MCLATouchEnabled"];
-    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"MCLAControlOverhaul"];
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"MCLATouchEnabledControlOverhaulTest"];
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"MCLAControlOverhaulTestEnabled"];
     [NSUserDefaults.standardUserDefaults setBool:NO forKey:@"MCLATiltEnabled"];
     [NSUserDefaults.standardUserDefaults setBool:NO forKey:@"MCLAFullPadVisible"];
     [super viewDidLoad];
@@ -83,11 +83,11 @@ bool MCLAControlPreviewRightTrigger();
     [self resetTouchLayout];
     assert([[defaults dictionaryForKey:@"MCLATouchLayoutPositions"] isEqual:baseline]);
     assert([[defaults arrayForKey:@"MCLATouchActiveControlsOverhaul"] count]==4);
-    [defaults setBool:NO forKey:@"MCLAControlOverhaul"];
+    [defaults setBool:NO forKey:@"MCLAControlOverhaulTestEnabled"];
     [self refreshTouchInputForGameVisible:YES];
     [self.view layoutIfNeeded];
     assert([[gas titleForState:UIControlStateNormal] isEqual:@"GAS\nRT"]);
-    [defaults setBool:YES forKey:@"MCLAControlOverhaul"];
+    [defaults setBool:YES forKey:@"MCLAControlOverhaulTestEnabled"];
     [self refreshTouchInputForGameVisible:YES];
     NSLog(@"MCLA_CONTROL_PREVIEW PASS: production combined pedal overlap/release, isolated reset and original title restoration");
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),dispatch_get_main_queue(),^{

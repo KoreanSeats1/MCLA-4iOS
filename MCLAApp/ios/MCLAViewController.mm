@@ -12,11 +12,12 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include "MCLAMetalPresentation.h"
 
-// Separate preferences let the experiment coexist with the approved layout.
+// This test branch enables the in-game experiment by default. Dedicated
+// switches leave the original branch’s control preferences untouched.
 static BOOL MCLAControlOverhaulEnabled(void) {
     NSString* override = NSProcessInfo.processInfo.environment[@"MCLA_CONTROL_OVERHAUL"];
     return override ? override.boolValue :
-        [NSUserDefaults.standardUserDefaults boolForKey:@"MCLAControlOverhaul"];
+        [NSUserDefaults.standardUserDefaults boolForKey:@"MCLAControlOverhaulTestEnabled"];
 }
 static NSString* MCLATouchPreference(NSString* key) {
     return MCLAControlOverhaulEnabled() ? [key stringByAppendingString:@"Overhaul"] : key;
@@ -118,11 +119,11 @@ static void MCLARegisterGraphicsDefaults(void) {
         @"MCLADisableMotionBlur": @NO,
         @"MCLADisableDepthOfField": @NO,
         @"MCLAExperimental60FPS": @NO,
-        @"MCLATouchEnabled": @NO,
+        @"MCLATouchEnabledControlOverhaulTest": @YES,
         @"MCLATiltEnabled": @NO,
         @"MCLATiltInvert": @NO,
         @"MCLATouchActiveControls": MCLADefaultTouchControls(),
-        @"MCLAControlOverhaul": @NO,
+        @"MCLAControlOverhaulTestEnabled": @YES,
         @"MCLATouchActiveControlsOverhaul": MCLAOverhaulControls(),
     }];
     mcla::SetDiagnosticsEnabled(![NSUserDefaults.standardUserDefaults boolForKey:@"MCLARetailMode"]);
@@ -378,8 +379,8 @@ static void MCLARegisterGraphicsDefaults(void) {
     }
     NSArray<NSString*>* names = @[@"Touch driving controls", @"Tilt steering",
                                   @"Invert tilt direction", @"Show full pad at launch", @"Experimental control overhaul"];
-    NSArray<NSString*>* keys = @[@"MCLATouchEnabled", @"MCLATiltEnabled",
-                                 @"MCLATiltInvert", @"MCLAFullPadVisible", @"MCLAControlOverhaul"];
+    NSArray<NSString*>* keys = @[@"MCLATouchEnabledControlOverhaulTest", @"MCLATiltEnabled",
+                                 @"MCLATiltInvert", @"MCLAFullPadVisible", @"MCLAControlOverhaulTestEnabled"];
     cell.textLabel.text = names[path.row];
     UISwitch* toggle = [[UISwitch alloc] init];
     toggle.tag = path.row;
@@ -390,8 +391,8 @@ static void MCLARegisterGraphicsDefaults(void) {
     return cell;
 }
 - (void)toggleChanged:(UISwitch*)sender {
-    NSArray<NSString*>* keys = @[@"MCLATouchEnabled", @"MCLATiltEnabled",
-                                 @"MCLATiltInvert", @"MCLAFullPadVisible", @"MCLAControlOverhaul"];
+    NSArray<NSString*>* keys = @[@"MCLATouchEnabledControlOverhaulTest", @"MCLATiltEnabled",
+                                 @"MCLATiltInvert", @"MCLAFullPadVisible", @"MCLAControlOverhaulTestEnabled"];
     [NSUserDefaults.standardUserDefaults setBool:sender.on forKey:keys[sender.tag]];
     if (sender.tag == 4) MCLAResetVirtualGamepad();
     [NSUserDefaults.standardUserDefaults synchronize];
@@ -1530,7 +1531,7 @@ static void MCLARegisterGraphicsDefaults(void) {
 
 - (void)toggleTouchLayoutEditing:(id)sender {
     (void)sender;
-    if (![NSUserDefaults.standardUserDefaults boolForKey:@"MCLATouchEnabled"]) {
+    if (![NSUserDefaults.standardUserDefaults boolForKey:@"MCLATouchEnabledControlOverhaulTest"]) {
         [self showControlsOptions:nil];
         return;
     }
@@ -1632,7 +1633,7 @@ static void MCLARegisterGraphicsDefaults(void) {
     (void)sender;
     if (self.editingTouchLayout) return;
     NSUserDefaults* defaults = NSUserDefaults.standardUserDefaults;
-    if (![defaults boolForKey:@"MCLATouchEnabled"]) {
+    if (![defaults boolForKey:@"MCLATouchEnabledControlOverhaulTest"]) {
         [self showControlsOptions:nil];
         return;
     }
@@ -1698,7 +1699,7 @@ static void MCLARegisterGraphicsDefaults(void) {
     [self applyTouchLayout];
     NSUserDefaults* defaults = NSUserDefaults.standardUserDefaults;
     const BOOL active = gameVisible &&
-        [defaults boolForKey:@"MCLATouchEnabled"] &&
+        [defaults boolForKey:@"MCLATouchEnabledControlOverhaulTest"] &&
         UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
     if (!active && self.touchInputActive) {
         MCLAResetVirtualGamepad();

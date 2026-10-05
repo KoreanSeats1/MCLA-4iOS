@@ -1,6 +1,6 @@
 # Experimental driving controls
 
-Branch: `control-overhaul`. Enable **Driving Controls → Experimental control overhaul** and **Touch driving controls**. The experiment is off by default. `MCLA_CONTROL_OVERHAUL=1` temporarily selects it for a development launch; `0` forces the original layout.
+Test branch: `control-overhaul-test`, based on `control-overhaul`. The in-game HUD experiment and touch driving controls are enabled by default. Dedicated test preference keys leave the original branch’s enable/disable preferences untouched. Both switches remain available in **Driving Controls** for A/B testing. The original `control-overhaul` branch defaults the experiment off. `MCLA_CONTROL_OVERHAUL=1` temporarily selects it for a development launch; `0` forces the original layout.
 
 The experiment adds a cyan steering ring, left-side nitro, pause/camera buttons at the top, and gas, brake and combined gas/handbrake controls at the bottom right. Tilt steering still replaces the joystick when enabled. Other actions remain available through the existing pad/palette. Experimental positions, sizes and active controls use separate `…Overhaul` preference keys. Reset only affects the selected layout. Switching layouts restores original button titles, colors and fonts and releases held input.
 
