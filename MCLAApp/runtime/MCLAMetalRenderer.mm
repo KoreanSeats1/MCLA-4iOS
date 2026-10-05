@@ -10,6 +10,7 @@
 #include "MCLAVertexFixup.h"
 #include "MCLAPackedTexture.h"
 #include "MCLAVisualExperiments.h"
+#include "MCLAControlOverhaul.h"
 #include "MCLAMetalVertexColor.h"
 #include "MCLAFastHash.h"
 #include "MCLAThreadCPUTiming.h"
@@ -2010,17 +2011,19 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
   uint32_t visualExperiments_ = MCLAGraphicsVisualExperiments();
   std::array<uint64_t,64> colorAuditKeys_{};
   unsigned colorAuditCount_=0;
-  bool FullScreenHUDOverlay(const uint8_t* state,
+  bool InspectHUDDraw(const uint8_t* state,
       const ng::RegisterVertexDeclarationCommand& decl, uint32_t primitive,
       uint32_t start, uint32_t count, bool indexed, int32_t baseVertex,
-      uint32_t inlineAddress, uint32_t inlineStride) {
-    if (count < 3 || count > 6) return false;
+      uint32_t inlineAddress, uint32_t inlineStride,
+      mcla::metal::HudBounds* bounds = nullptr) {
+    if (count < 3 || count > (bounds ? 4096u : 6u)) return false;
     const ng::VertexElement* position = nullptr;
     for (unsigned i=0;i<decl.element_count;++i)
       if (decl.elements[i].usage == 0 && decl.elements[i].usage_index == 0)
         position = &decl.elements[i];
     if (!position || position->type != 0x2A23B9 || position->stream >= 17) return false;
     const auto bind = streams_[position->stream];
+    if (inlineAddress && uint64_t(count)*inlineStride > 64u*1024u*1024u) return false;
     uint32_t address=inlineAddress, size=inlineAddress ? count*inlineStride : 0;
     const uint32_t stride=inlineAddress ? inlineStride : bind.stride;
     uint32_t offset=inlineAddress ? 0 : bind.offset;
@@ -2041,6 +2044,7 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
       indices=P(metadata->guest_address,metadata->guest_size); if (!indices) return false;
     }
     std::array<std::array<float,4>,6> clips{};
+    mcla::metal::HudBounds box{INFINITY, INFINITY, -INFINITY, -INFINITY};
     for (unsigned i=0;i<count;++i) {
       int64_t vertex=start+i;
       if (indexed) {
@@ -2052,11 +2056,21 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
       if (at+12 > size) return false;
       const float xyz[]={F(source,unsigned(at)),F(source,unsigned(at)+4),F(source,unsigned(at)+8)};
       // This shader's audited fetch/ALU sequence is p.x*c8+p.y*c9+p.z*c10+c11.
+      std::array<float,4> clip{};
       for (unsigned component=0;component<4;++component)
-        clips[i][component]=xyz[0]*F(state,1920+8*16+component*4)+
+        clip[component]=xyz[0]*F(state,1920+8*16+component*4)+
           xyz[1]*F(state,1920+9*16+component*4)+
           xyz[2]*F(state,1920+10*16+component*4)+F(state,1920+11*16+component*4);
+      if (bounds) {
+        if (!std::isfinite(clip[3]) || clip[3] <= 0) return false;
+        const float px = F(state,12640) + (clip[0]/clip[3]+1)*.5f*F(state,12648);
+        const float py = F(state,12644) + (1-clip[1]/clip[3])*.5f*F(state,12652);
+        if (!std::isfinite(px) || !std::isfinite(py)) return false;
+        box.left=std::min(box.left,px); box.right=std::max(box.right,px);
+        box.top=std::min(box.top,py); box.bottom=std::max(box.bottom,py);
+      } else clips[i]=clip;
     }
+    if (bounds) { *bounds=box; return true; }
     return mcla::metal::FullScreenOverlay({clips.data(),count},primitive==8);
   }
   bool Draw(uint32_t dev, uint32_t primitive, uint32_t start, uint32_t count,
@@ -2317,7 +2331,7 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
         (R(state,11844) >> 31);
     const bool fullScreenOverlay = safeFrameDraw &&
         (visualExperiments_ & mcla::metal::FullScreenFades) &&
-        FullScreenHUDOverlay(state,decl,primitive,start,count,indexed,baseVertex,data,stride);
+        InspectHUDDraw(state,decl,primitive,start,count,indexed,baseVertex,data,stride);
     const auto safe = safeFrameDraw && !fullScreenOverlay
         ? mcla::metal::HudSafeFrame(aw, ah)
         : mcla::metal::SafeFrame{0,0,aw,ah};
@@ -2331,9 +2345,26 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
                   safeFrameDraw,
                   primitive, count, indexed, x, y, w, h,
                   R(state,10436), R(state,10440));
+    mcla::metal::HudMove hudMove{};
+    if ((MCLAGraphicsVisualExperiments() & mcla::metal::RaisedDrivingHUD) &&
+        logicalTarget.width == 1280 && logicalTarget.height == 720 &&
+        vs->info->hash == 0xF8B6972A1D56B354ULL &&
+        ps && ps->info->hash == 0x5CA2EECD341441FFULL &&
+        (R(state,11844) >> 31) && !fullScreenOverlay) {
+      mcla::metal::HudBounds bounds{};
+      if (InspectHUDDraw(state,decl,primitive,start,count,indexed,
+                               baseVertex,data,stride,&bounds))
+        hudMove=mcla::metal::RaisedHudMove(bounds);
+      if (frames_ == hudTraceFrame_)
+        REXLOG_INFO("MCLA HUD MOVE draw={} group={} bounds={:.1f},{:.1f},{:.1f},{:.1f} scale={} dx={} dy={}",
+            draws_,hudMove.name,bounds.left,bounds.top,bounds.right,bounds.bottom,hudMove.scale,hudMove.x,hudMove.y);
+    }
+    const double hudOffsetX=hudMove.x*viewportScaleX+safe.left*(1-hudMove.scale);
+    const double hudOffsetY=hudMove.y*viewportScaleY+safe.top*(1-hudMove.scale);
     const std::array<double,6> viewport{
-        safe.left+x*viewportScaleX, safe.top+y*viewportScaleY,
-        w*viewportScaleX, h*viewportScaleY,
+        safe.left+(x*hudMove.scale+hudMove.x)*viewportScaleX,
+        safe.top+(y*hudMove.scale+hudMove.y)*viewportScaleY,
+        w*hudMove.scale*viewportScaleX, h*hudMove.scale*viewportScaleY,
         std::clamp(double(F(state, 12656)), 0., 1.),
         std::clamp(double(F(state, 12660)), 0., 1.)};
     if (UpdateDynamic(viewport_, viewport))
@@ -2344,6 +2375,12 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
              sy = safe.top + mcla::metal::ScaleEdge((tl >> 16) & 32767, logicalTarget.height, safe.height),
              ex = safe.left + mcla::metal::ScaleEdge(br & 32767, logicalTarget.width, safe.width),
              ey = safe.top + mcla::metal::ScaleEdge((br >> 16) & 32767, logicalTarget.height, safe.height);
+    if (hudMove.scale != 1 || hudMove.x || hudMove.y) {
+      sx=mcla::metal::MovedHudEdge(sx,hudMove.scale,hudOffsetX,aw);
+      ex=mcla::metal::MovedHudEdge(ex,hudMove.scale,hudOffsetX,aw);
+      sy=mcla::metal::MovedHudEdge(sy,hudMove.scale,hudOffsetY,ah);
+      ey=mcla::metal::MovedHudEdge(ey,hudMove.scale,hudOffsetY,ah);
+    }
     if (ex <= sx || ey <= sy)
       return true;
     const std::array<NSUInteger,4> scissor{sx,sy,ex-sx,ey-sy};

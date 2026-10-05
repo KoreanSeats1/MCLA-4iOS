@@ -5,7 +5,7 @@
 #include <span>
 namespace mcla::metal {
 enum VisualExperiment : unsigned {
-    PackedVertexColor = 1, FullScreenFades = 2, StableMaterialLOD = 4
+    PackedVertexColor = 1, FullScreenFades = 2, StableMaterialLOD = 4, RaisedDrivingHUD = 8
 };
 // Only complete clip-space rectangles qualify, not HUD tiles or menu cards.
 // Rectangle-list input omits its fourth corner; other primitives need all four.

@@ -12,6 +12,31 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #include "MCLAMetalPresentation.h"
 
+// Separate preferences let the experiment coexist with the approved layout.
+static BOOL MCLAControlOverhaulEnabled(void) {
+    NSString* override = NSProcessInfo.processInfo.environment[@"MCLA_CONTROL_OVERHAUL"];
+    return override ? override.boolValue :
+        [NSUserDefaults.standardUserDefaults boolForKey:@"MCLAControlOverhaul"];
+}
+static NSString* MCLATouchPreference(NSString* key) {
+    return MCLAControlOverhaulEnabled() ? [key stringByAppendingString:@"Overhaul"] : key;
+}
+static NSDictionary* MCLAOverhaulPositions(void) {
+    return @{@"steer": @[@0.14,@0.80], @"nitro": @[@0.065,@0.53],
+        @"gas": @[@0.925,@0.66], @"handbrake": @[@0.925,@0.875],
+        @"brake": @[@0.80,@0.84], @"camera": @[@0.955,@0.065],
+        @"pause": @[@0.045,@0.065]};
+}
+static NSDictionary* MCLAOverhaulSizes(void) {
+    return @{@"steer": @[@230,@230], @"nitro": @[@114,@114],
+        @"gas": @[@132,@170], @"handbrake": @[@132,@130],
+        @"brake": @[@136,@140], @"pause": @[@56,@56], @"camera": @[@56,@56]};
+}
+
+static NSArray* MCLAOverhaulControls(void) {
+    return @[@"nitro", @"handbrake", @"camera", @"pause"];
+}
+
 static NSArray<NSString*>* MCLAOutputOptionNames(void) {
     return @[@"720p · 1280 × 720", @"900p · 1600 × 900", @"1080p · 1920 × 1080"];
 }
@@ -97,6 +122,8 @@ static void MCLARegisterGraphicsDefaults(void) {
         @"MCLATiltEnabled": @NO,
         @"MCLATiltInvert": @NO,
         @"MCLATouchActiveControls": MCLADefaultTouchControls(),
+        @"MCLAControlOverhaul": @NO,
+        @"MCLATouchActiveControlsOverhaul": MCLAOverhaulControls(),
     }];
     mcla::SetDiagnosticsEnabled(![NSUserDefaults.standardUserDefaults boolForKey:@"MCLARetailMode"]);
 #if MCLA_SMAA_LAB
@@ -329,7 +356,7 @@ static void MCLARegisterGraphicsDefaults(void) {
 - (void)done:(id)sender { (void)sender; [self dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView*)tableView { (void)tableView; return 2; }
 - (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section {
-    (void)tableView; return section == 0 ? 4 : 2;
+    (void)tableView; return section == 0 ? 5 : 2;
 }
 - (NSString*)tableView:(UITableView*)tableView titleForHeaderInSection:(NSInteger)section {
     (void)tableView; return section == 0 ? @"On-Screen Pad" : @"Steering Setup";
@@ -350,9 +377,9 @@ static void MCLARegisterGraphicsDefaults(void) {
         return cell;
     }
     NSArray<NSString*>* names = @[@"Touch driving controls", @"Tilt steering",
-                                  @"Invert tilt direction", @"Show full pad at launch"];
+                                  @"Invert tilt direction", @"Show full pad at launch", @"Experimental control overhaul"];
     NSArray<NSString*>* keys = @[@"MCLATouchEnabled", @"MCLATiltEnabled",
-                                 @"MCLATiltInvert", @"MCLAFullPadVisible"];
+                                 @"MCLATiltInvert", @"MCLAFullPadVisible", @"MCLAControlOverhaul"];
     cell.textLabel.text = names[path.row];
     UISwitch* toggle = [[UISwitch alloc] init];
     toggle.tag = path.row;
@@ -364,8 +391,9 @@ static void MCLARegisterGraphicsDefaults(void) {
 }
 - (void)toggleChanged:(UISwitch*)sender {
     NSArray<NSString*>* keys = @[@"MCLATouchEnabled", @"MCLATiltEnabled",
-                                 @"MCLATiltInvert", @"MCLAFullPadVisible"];
+                                 @"MCLATiltInvert", @"MCLAFullPadVisible", @"MCLAControlOverhaul"];
     [NSUserDefaults.standardUserDefaults setBool:sender.on forKey:keys[sender.tag]];
+    if (sender.tag == 4) MCLAResetVirtualGamepad();
     [NSUserDefaults.standardUserDefaults synchronize];
     if (self.onChange) self.onChange();
 }
@@ -744,6 +772,9 @@ static void MCLARegisterGraphicsDefaults(void) {
 @property(nonatomic, copy) void (^pendingSaveConfirm)(void);
 @property(nonatomic, copy) void (^pendingSaveCancel)(void);
 @property(nonatomic, strong) UIStackView* touchControls;
+@property(nonatomic, assign) BOOL overhaulGasHeld;
+@property(nonatomic, assign) BOOL overhaulHandbrakeHeld;
+@property(nonatomic, assign) BOOL overhaulWasEnabled;
 @property(nonatomic, strong) MCLAVirtualStickView* steeringStick;
 @property(nonatomic, strong) MCLAVirtualStickView* cameraStick;
 @property(nonatomic, strong) NSArray<UIButton*>* pedals;
@@ -751,6 +782,7 @@ static void MCLARegisterGraphicsDefaults(void) {
 @property(nonatomic, strong) NSArray<NSString*>* drivingActionKeys;
 @property(nonatomic, strong) UIVisualEffectView* fullPadPanel;
 @property(nonatomic, strong) NSMutableDictionary<NSString*, UIButton*>* paletteButtons;
+@property(nonatomic, strong) NSMutableDictionary<NSString*, NSDictionary*>* originalTouchAppearance;
 @property(nonatomic, strong) NSMutableDictionary<NSString*, UIView*>* layoutControls;
 @property(nonatomic, strong) NSMutableDictionary<NSString*, NSArray<NSNumber*>*>* layoutDefaults;
 @property(nonatomic, strong) NSMutableDictionary<NSString*, NSLayoutConstraint*>* layoutX;
@@ -1037,16 +1069,16 @@ static void MCLARegisterGraphicsDefaults(void) {
 
 - (BOOL)isTouchControlDeployed:(NSString*)key {
     NSArray<NSString*>* active = [NSUserDefaults.standardUserDefaults
-        arrayForKey:@"MCLATouchActiveControls"];
+        arrayForKey:MCLATouchPreference(@"MCLATouchActiveControls")];
     return [active containsObject:key];
 }
 
 - (void)setTouchControl:(NSString*)key deployed:(BOOL)deployed {
     NSMutableOrderedSet<NSString*>* active = [NSMutableOrderedSet orderedSetWithArray:
-        [NSUserDefaults.standardUserDefaults arrayForKey:@"MCLATouchActiveControls"] ?: @[]];
+        [NSUserDefaults.standardUserDefaults arrayForKey:MCLATouchPreference(@"MCLATouchActiveControls")] ?: @[]];
     if (deployed) [active addObject:key]; else [active removeObject:key];
     [NSUserDefaults.standardUserDefaults setObject:active.array
-                                            forKey:@"MCLATouchActiveControls"];
+                                            forKey:MCLATouchPreference(@"MCLATouchActiveControls")];
     [NSUserDefaults.standardUserDefaults synchronize];
     [self refreshTouchInputForGameVisible:!self.panel.hidden];
 }
@@ -1111,6 +1143,15 @@ static void MCLARegisterGraphicsDefaults(void) {
         controlWidth, controlHeight,
     ]];
     self.layoutControls[key] = control;
+    if ([control isKindOfClass:UIButton.class]) {
+        if (!self.originalTouchAppearance) self.originalTouchAppearance=[NSMutableDictionary dictionary];
+        UIButton* button=(UIButton*)control;
+        self.originalTouchAppearance[key]=@{@"title":[button titleForState:UIControlStateNormal] ?: @"",
+            @"background":button.backgroundColor ?: UIColor.clearColor,
+            @"border":control.layer.borderColor ? [UIColor colorWithCGColor:control.layer.borderColor] : UIColor.clearColor,
+            @"borderWidth":@(control.layer.borderWidth), @"font":button.titleLabel.font,
+            @"lines":@(button.titleLabel.numberOfLines)};
+    }
     self.layoutDefaults[key] = @[@(x), @(y)];
     self.layoutX[key] = centerX;
     self.layoutY[key] = centerY;
@@ -1308,21 +1349,30 @@ static void MCLARegisterGraphicsDefaults(void) {
 
 - (NSArray<NSNumber*>*)touchPositionForKey:(NSString*)key {
     NSDictionary* saved = [NSUserDefaults.standardUserDefaults
-        dictionaryForKey:@"MCLATouchLayoutPositions"];
+        dictionaryForKey:MCLATouchPreference(@"MCLATouchLayoutPositions")];
     NSArray* position = saved[key];
     if ([position isKindOfClass:NSArray.class] && position.count == 2 &&
         [position[0] isKindOfClass:NSNumber.class] &&
         [position[1] isKindOfClass:NSNumber.class]) return position;
-    return self.layoutDefaults[key];
+    return MCLAControlOverhaulEnabled() ?
+        (MCLAOverhaulPositions()[key] ?: self.layoutDefaults[key]) : self.layoutDefaults[key];
 }
 
 - (NSArray<NSNumber*>*)touchSizeForKey:(NSString*)key {
     NSDictionary* saved = [NSUserDefaults.standardUserDefaults
-        dictionaryForKey:@"MCLATouchLayoutSizes"];
+        dictionaryForKey:MCLATouchPreference(@"MCLATouchLayoutSizes")];
     NSArray* size = saved[key];
     if ([size isKindOfClass:NSArray.class] && size.count == 2 &&
         [size[0] isKindOfClass:NSNumber.class] &&
         [size[1] isKindOfClass:NSNumber.class]) return size;
+    if (MCLAControlOverhaulEnabled()) {
+        NSArray<NSNumber*>* authored=MCLAOverhaulSizes()[key];
+        if (authored) {
+            CGRect safe=[self touchSafeRect];
+            CGFloat scale=MIN(safe.size.width/1280.0,safe.size.height/720.0);
+            return @[@(authored[0].doubleValue*scale),@(authored[1].doubleValue*scale)];
+        }
+    }
     return self.layoutDefaultSizes[key];
 }
 
@@ -1332,6 +1382,27 @@ static void MCLARegisterGraphicsDefaults(void) {
         control.layer.cornerRadius = MIN(control.bounds.size.width, control.bounds.size.height) * 0.5;
     else if ([control isKindOfClass:UIButton.class])
         control.layer.cornerRadius = radius;
+    BOOL overhaul=MCLAControlOverhaulEnabled();
+    NSString* key=[control.accessibilityIdentifier stringByReplacingOccurrencesOfString:@"mcla.touch." withString:@""];
+    if ([control isKindOfClass:MCLAVirtualStickView.class]) {
+        MCLAVirtualStickView* stick=(MCLAVirtualStickView*)control;
+        stick.caption.hidden=overhaul;
+        stick.layer.borderColor=(overhaul ? [UIColor colorWithRed:0.2 green:0.95 blue:1 alpha:0.8] : [UIColor colorWithWhite:1 alpha:0.4]).CGColor;
+        stick.layer.borderWidth=overhaul ? 2 : 1.2;
+    } else if ([control isKindOfClass:UIButton.class]) {
+        UIButton* button=(UIButton*)control;
+        NSDictionary* titles=@{@"gas":@"❯❯\nGAS", @"brake":@"❮❮\nBRAKE",
+            @"handbrake":@"↝\nGAS + HB", @"nitro":@"ϟ\nNITRO", @"pause":@"Ⅱ", @"camera":@"▣"};
+        NSDictionary* original=self.originalTouchAppearance[key];
+        [button setTitle:overhaul && titles[key] ? titles[key] : original[@"title"] forState:UIControlStateNormal];
+        button.titleLabel.numberOfLines=overhaul ? 2 : [original[@"lines"] integerValue];
+        button.titleLabel.textAlignment=NSTextAlignmentCenter;
+        button.titleLabel.font=overhaul ? [UIFont systemFontOfSize:MAX(12,MIN(26,control.bounds.size.height*.20)) weight:UIFontWeightHeavy] : original[@"font"];
+        button.layer.borderColor=(overhaul ? [UIColor colorWithRed:0.2 green:0.95 blue:1 alpha:0.8] : (UIColor*)original[@"border"]).CGColor;
+        button.backgroundColor=overhaul ? [UIColor colorWithWhite:0.015 alpha:0.35] : original[@"background"];
+        button.layer.borderWidth=overhaul ? 1.8 : [original[@"borderWidth"] doubleValue];
+        if (overhaul && [key isEqual:@"nitro"]) button.layer.cornerRadius=MIN(control.bounds.size.width,control.bounds.size.height)*.5;
+    }
 }
 
 - (void)applyTouchLayout {
@@ -1340,6 +1411,11 @@ static void MCLARegisterGraphicsDefaults(void) {
     for (NSString* key in self.layoutControls) {
         UIView* control = self.layoutControls[key];
         NSArray<NSNumber*>* defaultSize = self.layoutDefaultSizes[key];
+        if (MCLAControlOverhaulEnabled()) {
+            NSArray<NSNumber*>* authored=MCLAOverhaulSizes()[key];
+            CGFloat scale=MIN(safe.size.width/1280.0,safe.size.height/720.0);
+            if (authored) defaultSize=@[@(authored[0].doubleValue*scale),@(authored[1].doubleValue*scale)];
+        }
         NSArray<NSNumber*>* savedSize = [self touchSizeForKey:key];
         // Keep edit controls usable: roughly 55%–155% of their authored size.
         const CGFloat minScale = 0.55;
@@ -1388,9 +1464,9 @@ static void MCLARegisterGraphicsDefaults(void) {
     const CGFloat nextHeight = currentHeight * pinch.scale;
     pinch.scale = 1.0;
     NSMutableDictionary* sizes = [[NSUserDefaults.standardUserDefaults
-        dictionaryForKey:@"MCLATouchLayoutSizes"] mutableCopy] ?: [NSMutableDictionary dictionary];
+        dictionaryForKey:MCLATouchPreference(@"MCLATouchLayoutSizes")] mutableCopy] ?: [NSMutableDictionary dictionary];
     sizes[key] = @[@(nextWidth), @(nextHeight)];
-    [NSUserDefaults.standardUserDefaults setObject:sizes forKey:@"MCLATouchLayoutSizes"];
+    [NSUserDefaults.standardUserDefaults setObject:sizes forKey:MCLATouchPreference(@"MCLATouchLayoutSizes")];
     [self applyTouchLayout];
     [self.view layoutIfNeeded];
     if (pinch.state == UIGestureRecognizerStateEnded ||
@@ -1441,10 +1517,10 @@ static void MCLARegisterGraphicsDefaults(void) {
     center.y = fmax(CGRectGetMinY(safe) + insetY,
                     fmin(CGRectGetMaxY(safe) - insetY, center.y + delta.y));
     NSMutableDictionary* positions = [[NSUserDefaults.standardUserDefaults
-        dictionaryForKey:@"MCLATouchLayoutPositions"] mutableCopy] ?: [NSMutableDictionary dictionary];
+        dictionaryForKey:MCLATouchPreference(@"MCLATouchLayoutPositions")] mutableCopy] ?: [NSMutableDictionary dictionary];
     positions[key] = @[@((center.x - CGRectGetMinX(safe)) / safe.size.width),
                        @((center.y - CGRectGetMinY(safe)) / safe.size.height)];
-    [NSUserDefaults.standardUserDefaults setObject:positions forKey:@"MCLATouchLayoutPositions"];
+    [NSUserDefaults.standardUserDefaults setObject:positions forKey:MCLATouchPreference(@"MCLATouchLayoutPositions")];
     [self applyTouchLayout];
     [self.view layoutIfNeeded];
     if (pan.state == UIGestureRecognizerStateEnded ||
@@ -1459,7 +1535,8 @@ static void MCLARegisterGraphicsDefaults(void) {
         return;
     }
     self.editingTouchLayout = !self.editingTouchLayout;
-    if (self.editingTouchLayout) MCLAResetVirtualGamepad();
+    if (self.editingTouchLayout) { MCLAResetVirtualGamepad();
+        self.overhaulGasHeld=NO; self.overhaulHandbrakeHeld=NO; }
     for (UIView* control in self.layoutControls.allValues) {
         for (UIGestureRecognizer* recognizer in control.gestureRecognizers)
             if ([recognizer isKindOfClass:UIPanGestureRecognizer.class] ||
@@ -1476,10 +1553,10 @@ static void MCLARegisterGraphicsDefaults(void) {
 }
 
 - (void)resetTouchLayout {
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"MCLATouchLayoutPositions"];
-    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"MCLATouchLayoutSizes"];
-    [NSUserDefaults.standardUserDefaults setObject:MCLADefaultTouchControls()
-                                            forKey:@"MCLATouchActiveControls"];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:MCLATouchPreference(@"MCLATouchLayoutPositions")];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:MCLATouchPreference(@"MCLATouchLayoutSizes")];
+    [NSUserDefaults.standardUserDefaults setObject:(MCLAControlOverhaulEnabled() ? MCLAOverhaulControls() : MCLADefaultTouchControls())
+                                            forKey:MCLATouchPreference(@"MCLATouchActiveControls")];
     [NSUserDefaults.standardUserDefaults synchronize];
     [self applyTouchLayout];
 }
@@ -1525,19 +1602,30 @@ static void MCLARegisterGraphicsDefaults(void) {
 - (void)gamepadButtonDown:(UIButton*)sender {
     if (self.editingTouchLayout) return;
     MCLASetVirtualGamepadButton((uint16_t)sender.tag, true);
+    if (MCLAControlOverhaulEnabled() && [sender.accessibilityIdentifier isEqual:@"mcla.touch.handbrake"]) {
+        self.overhaulHandbrakeHeld=YES;
+        MCLASetVirtualGamepadTrigger(true, true);
+    }
 }
 
 - (void)gamepadButtonUp:(UIButton*)sender {
     MCLASetVirtualGamepadButton((uint16_t)sender.tag, false);
+    if (MCLAControlOverhaulEnabled() && [sender.accessibilityIdentifier isEqual:@"mcla.touch.handbrake"]) {
+        self.overhaulHandbrakeHeld=NO;
+        MCLASetVirtualGamepadTrigger(true, self.overhaulGasHeld);
+    }
 }
 
 - (void)pedalDown:(UIButton*)sender {
     if (self.editingTouchLayout) return;
+    if (sender.tag == 2) self.overhaulGasHeld=YES;
     MCLASetVirtualGamepadTrigger(sender.tag == 2, true);
 }
 
 - (void)pedalUp:(UIButton*)sender {
-    MCLASetVirtualGamepadTrigger(sender.tag == 2, false);
+    if (sender.tag == 2) self.overhaulGasHeld=NO;
+    BOOL combinedHeld=MCLAControlOverhaulEnabled() && self.overhaulHandbrakeHeld;
+    MCLASetVirtualGamepadTrigger(sender.tag == 2, sender.tag == 2 && combinedHeld);
 }
 
 - (void)toggleFullPad:(id)sender {
@@ -1600,11 +1688,22 @@ static void MCLARegisterGraphicsDefaults(void) {
 }
 
 - (void)refreshTouchInputForGameVisible:(BOOL)gameVisible {
+    if (self.overhaulWasEnabled != MCLAControlOverhaulEnabled()) {
+        MCLAResetVirtualGamepad();
+        self.overhaulGasHeld=NO; self.overhaulHandbrakeHeld=NO;
+        self.overhaulWasEnabled=MCLAControlOverhaulEnabled();
+    }
+
+    MCLAGraphicsSetVisualExperiments(7u | (MCLAControlOverhaulEnabled() ? 8u : 0u));
+    [self applyTouchLayout];
     NSUserDefaults* defaults = NSUserDefaults.standardUserDefaults;
     const BOOL active = gameVisible &&
         [defaults boolForKey:@"MCLATouchEnabled"] &&
         UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
-    if (!active && self.touchInputActive) MCLAResetVirtualGamepad();
+    if (!active && self.touchInputActive) {
+        MCLAResetVirtualGamepad();
+        self.overhaulGasHeld=NO; self.overhaulHandbrakeHeld=NO;
+    }
     if (!active && self.editingTouchLayout) {
         self.editingTouchLayout = NO;
         [self.editButton setTitle:@"EDIT" forState:UIControlStateNormal];
@@ -1914,7 +2013,7 @@ static void MCLARegisterGraphicsDefaults(void) {
     MCLAGraphicsSetDepthOfFieldDisabled([NSUserDefaults.standardUserDefaults boolForKey:@"MCLADisableDepthOfField"]);
     MCLAGraphicsSetExperimental60FPS([NSUserDefaults.standardUserDefaults boolForKey:@"MCLAExperimental60FPS"]);
     // Rendering correctness fixes are automatic, independent of saved legacy switches.
-    MCLAGraphicsSetVisualExperiments(7u);
+    MCLAGraphicsSetVisualExperiments(7u | (MCLAControlOverhaulEnabled() ? 8u : 0u));
     [self.metalView setNeedsLayout];
     [self.metalView layoutIfNeeded];
     if (!MCLAHostStartRuntime(self.gameRoot.fileSystemRepresentation,
