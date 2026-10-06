@@ -19,6 +19,9 @@ int main() {
     assert(RaisedHudMove({305,460,75,685}).y == 0);
     assert(RaisedHudMove({NAN,460,305,685}).y == 0);
     const auto map=RaisedHudMove({72,440,330,710});
+    const auto ring=RaisedHudMove({23.3f,407.6f,359.8f,744.2f});
+    assert(ring.scale==map.scale && ring.x==map.x && ring.y==map.y);
+    assert(RaisedHudMove({16,400,368,752}).y==0); // unrelated larger panel
     const auto gauge=RaisedHudMove({900,480,1260,710});
     assert(std::fabs(440*map.scale+map.y-76)<.001f);
     assert(std::fabs(710*map.scale+map.y-319.f)<.001f);

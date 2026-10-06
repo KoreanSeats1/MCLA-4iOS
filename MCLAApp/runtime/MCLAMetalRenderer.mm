@@ -824,6 +824,7 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
     }
     passCaptureCount_ = 0;
     passCaptureBytes_ = 0;
+    hudTraceFrame_ = passCaptureFrame_;
     REXLOG_INFO("MCLA METAL PROBE mode={} token={} start={} capture_frame={}",
         probeMode_.UTF8String, probeToken_, frames_, passCaptureFrame_);
     NSDictionary *ack = @{@"mode":probeMode_, @"capture":@(probeToken_),

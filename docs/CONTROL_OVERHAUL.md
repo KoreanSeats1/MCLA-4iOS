@@ -10,6 +10,8 @@ The renderer evaluates the existing audited 2D HUD vertex transform for vertex s
 
 Inline and indexed vertex reads are range checked and bounded to 4,096 vertices. Full-screen backgrounds, invalid geometry, unrelated shaders and other logical target sizes remain in place. Mixed batches using other topologies or more than 256 vertices retain the conservative whole-draw policy. With diagnostics enabled, `MCLA_HUD_TRACE_FRAME=<frame>` also emits `MCLA HUD MOVE` bounds, group and transform information for that frame.
 
+Map border correction: the live M5 trace (token 610061, frame 9210, draw 1728) identifies a padded ring quad at `(23.3,407.6)..(359.8,744.2)`, outside the fill's conservative bounds. A bounded square-quad allowance now applies the exact existing minimap translation and 90% scale to this padded layer. The regression check uses those captured bounds and verifies identical fill/border transforms. Opt-in render-probe captures also trace HUD geometry for their capture frame.
+
 This is a spatial renderer experiment, not semantic identification of a game movie. The same shader also draws menus. In gameplay, masks or text using other programs and batches spanning both panels may remain behind; corner menu elements may qualify. Verify the map circle, rotating streets, route arrow, gauge digits/needle, nitro, race overlays and pause/GPS/garage screens before merging. No physical-device gameplay verification or performance result is claimed yet.
 
 ## Validation and preview
@@ -44,3 +46,5 @@ The packed normalized declaration retains its BGRA view for those two observed g
 The captured Wilcox/Selma signs use a blue/white BC1 atlas; decoding the actual guest texture shows the same blue background before material rendering. That scene does not establish a green-to-purple sign conversion. The road sun-specular calculation and nonzero height/specular texture remain present; equivalent sunset lighting/view conditions still need comparison.
 
 Installed M5 validation: the corrected gameplay frame shows a red signal glow and warm headlights; the user confirms the lights seem fixed. This validates the observed glow correction, with broader effect coverage still pending. The user continues to report street-sign color problems, which remain separate from this fix.
+
+Reference comparison: fresh M5 capture token 610058 shows a blue/purple LA BREA AVE nameplate beside red signals. The extracted guest BC1 atlas contains that nameplate with a blue/purple background. Original console gameplay at https://images.cgames.de/images/gsgp/226/gp12-t-midnight-club-los-angeles05_1217973.jpg also shows blue street-name signs (Hollywood Blvd). The user requested matching the original game, so no green recolor is applied. This does not validate every sign material: green freeway/directional boards are a separate asset class. The follow-up token 610059 pixel history sampled a different scene after the car moved and is not sign-color evidence.
