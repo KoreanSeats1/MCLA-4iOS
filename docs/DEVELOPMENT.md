@@ -1,4 +1,4 @@
-# Developer guide — 0.1.0
+# Developer guide — 1.0
 
 ## Layout and exact dependency revisions
 
@@ -42,7 +42,7 @@ Generated registration/initialization glue, AOT translation units, shader ABI me
 6. Prepare the vertex metadata map required by the title bridge and the optional/reference SPIR-V pack expected by the historical project. The production executable does not use a Vulkan runtime.
 7. Prepare FSR EASU/RCAS inputs and run the offline FSR build. SPIRV-Cross here is a build tool; the app uses native Metal output. Its original shader-generator inputs are not published as game data.
 
-The source contains a shader-resource scanner and corpus expanders, but capturing coverage is not the same as guaranteeing every shader permutation exists. The 0.1.0 package has 603 libraries and two newly observed unresolved gaps.
+The source contains a shader-resource scanner and corpus expanders, but capturing coverage is not the same as guaranteeing every shader permutation exists. The 1.0 package has 603 libraries and two newly observed unresolved gaps.
 
 ## Apple build and signing
 
@@ -78,8 +78,18 @@ Retail Mode gates ordinary diagnostics and captures. Turn it off before launchin
 
 CPU wall time includes waits and descheduling. GPU execution does not include every CPU/queue/presentation delay. Some UI samples are the latest completion, not exact-row pairs. GPU passes/stages may overlap. Thermal state is pressure metadata, not a temperature reading. Keep these distinctions in benchmark reports.
 
-The current bounded color trace records up to 64 unique shader/type/color-index entries and the first three color words during uncached geometry preparation. It does no forced recoloring and is entirely bypassed with Retail Mode enabled. It is evidence collection for the blue-glow investigation, not a lighting fix.
+The current bounded color trace records up to 128 unique shader/type/color-index entries and the first three color words during uncached geometry preparation. It does no forced recoloring and is entirely bypassed with Retail Mode enabled. It supports further effect validation; the two audited post-tonemap glow programs have a separate packed-color correction.
 
 ## Further work
 
-Highest priorities: recover the missing programs, localize blue-glow source inputs, reproduce the new-game suspension report, verify every fade and checkpoint path, compare blur controls, and test long/warm 30/60 FPS sessions. Performance follow-ups should inspect CPU preparation, resource maintenance, shared-upload pressure, pass/resolve bandwidth and compositor deadlines. MetalFX interpolation needs a separate implementation with depth/motion/UI/history/pacing contracts; it is not enabled by changing the frame limiter.
+Highest priorities: recover the missing programs, expand validation of corrected glow paths, reproduce the new-game suspension report, verify every fade and checkpoint path, compare blur controls, and test long/warm 30/60 FPS sessions. Performance follow-ups should inspect CPU preparation, resource maintenance, shared-upload pressure, pass/resolve bandwidth and compositor deadlines. MetalFX interpolation needs a separate implementation with depth/motion/UI/history/pacing contracts; it is not enabled by changing the frame limiter.
+
+## Packaging a versioned release
+
+The CMake project version controls the marketing version; the tracked build number is separate. Regenerate the Xcode project before building after changing either. Keep installed app signing intact and stage a copy for recipient re-signing:
+
+```sh
+python3 tools/package_beta.py --version 1.0 --output releases/1.0
+```
+
+The packager verifies the device app and ARM64 architecture, checks the expected 603-library inventory, excludes original-game/private-signing files, adds licenses/notices, ad-hoc signs the staged copy, tests ZIP integrity and writes SHA-256 sums plus a source-commit manifest. It does not export an App Store archive or grant recipients a provisioning profile. Versioned release notes and validation live under `docs/releases/`.

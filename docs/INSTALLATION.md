@@ -9,7 +9,7 @@
 Use the official [Sideloadly website](https://sideloadly.io/) and [FAQ](https://sideloadly.io/faq.html). Avoid repackaged downloads that request unrelated configuration profiles.
 
 1. Download Sideloadly from its official website and install its current macOS/Windows prerequisites. On Windows, follow Sideloadly's own Apple driver/iTunes/iCloud requirements; the Apple Devices file-transfer instructions below are a separate step.
-2. Download **MCLA-4iOS-0.1.0.ipa** from the release's **Assets** list. Keep it as an IPA. The source ZIP, checksum file and JSON manifest are not the app installer.
+2. Download **MCLA-4iOS-1.0.ipa** from the release's **Assets** list. Keep it as an IPA. The source ZIP, checksum file and JSON manifest are not the app installer.
 3. Connect your iPhone/iPad by USB, unlock it and accept **Trust This Computer** if prompted. Confirm the device appears in Sideloadly.
 4. Select that device in Sideloadly. Drag the IPA onto its IPA area, or use the IPA selector to choose it.
 5. Use the normal Apple-ID signing workflow, enter your Apple account and start installation. Complete any authentication prompts in the tool. Keep the same account and bundle identifier for future updates.

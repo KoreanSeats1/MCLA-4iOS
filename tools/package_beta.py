@@ -32,12 +32,14 @@ def archive(folder, output):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--app', type=Path, default=ROOT/'out/build/ios-device-release/Release-iphoneos/MCLAApp.app')
-    parser.add_argument('--output', type=Path, default=ROOT/'releases/0.1.0')
+    parser.add_argument('--version', default='1.0', help='Expected marketing version')
+    parser.add_argument('--output', type=Path)
     args = parser.parse_args()
-    app, output = args.app.resolve(), args.output.resolve()
+    app = args.app.resolve()
+    output = (args.output or ROOT/'releases'/args.version).resolve()
     info = plistlib.loads((app/'Info.plist').read_bytes())
-    if info['CFBundleShortVersionString'] != '0.1.0':
-        raise RuntimeError('Expected version 0.1.0')
+    if info['CFBundleShortVersionString'] != args.version:
+        raise RuntimeError(f'Expected version {args.version}')
     executable = app/info['CFBundleExecutable']
     subprocess.run(['codesign', '--verify', '--strict', str(app)], check=True)
     subprocess.run(['lipo', '-verify_arch', 'arm64', str(executable)], check=True)
@@ -62,18 +64,19 @@ def main():
     subprocess.run(['codesign', '--remove-signature', str(target)], check=True)
     subprocess.run(['codesign', '--force', '--sign', '-', '--timestamp=none', str(target)], check=True)
     subprocess.run(['codesign', '--verify', '--strict', str(target)], check=True)
-    ipa = output/'MCLA-4iOS-0.1.0.ipa'
+    ipa = output/f'MCLA-4iOS-{args.version}.ipa'
     archive(staging, ipa)
     with zipfile.ZipFile(ipa) as z:
         if z.testzip() is not None:
             raise RuntimeError('IPA archive integrity check failed')
     manifest = {
-        'name': 'MCLA 4iOS', 'version': '0.1.0', 'build': info['CFBundleVersion'],
+        'name': 'MCLA 4iOS', 'version': args.version, 'build': info['CFBundleVersion'],
         'bundleIdentifier': info['CFBundleIdentifier'], 'architecture': 'arm64',
         'minimumOSVersion': info.get('MinimumOSVersion'), 'titleMetalLibraryCount': len(libraries),
         'gameDataIncluded': False, 'personalProvisioningIncluded': False,
         'signing': 'Ad-hoc; recipient must re-sign with their own account',
         'ipaSHA256': digest(ipa), 'executableSHA256': digest(target/info['CFBundleExecutable']),
+        'sourceCommit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
     }
     metadata = output/'release-manifest.json'
     metadata.write_text(json.dumps(manifest, indent=2)+'\n')

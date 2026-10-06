@@ -1,4 +1,4 @@
-# Technical notes — 0.1.0
+# Technical notes — 1.0
 
 [Back to the README](../README.md) · [Developer guide](DEVELOPMENT.md)
 
@@ -14,13 +14,25 @@
 | Disable Depth of Field | Controls the guest circle-of-confusion/composite inputs. **Depth of field is enabled by default.** |
 | Retail Mode | Gates ordinary diagnostic logging, captures and profiling. Enable it for a normal play session. |
 | FPS & Frame-Time Graph | Available with diagnostics enabled. Double-tapping the graph starts a bounded timing capture. |
-| Experimental → Native 60 FPS | The **only experimental menu option**. Standard mode remains 30 FPS. |
+| Experimental → Native 60 FPS | The experimental option in Graphics. Standard mode remains 30 FPS. |
 
 Fresh defaults are 720p on iPhone and 1080p on iPad, FSR off, 4× filtering, balanced bloom, motion blur on, depth of field on, and 60 FPS off. Fresh Retail Mode defaults differ by device: on for iPhone, off for iPad during this beta's diagnostic development. Set Retail Mode on explicitly if you want logging/profiling off on either device.
 
 Existing saved preferences are retained. The Defaults action restores the saved graphics baseline and turns experimental 60 FPS off; it does not reset your control layout. Most scene/timing choices are locked during a running game and require closing/relaunching. FSR has an independent live presentation switch.
 
-The old Packed Color Correction, Full-Screen Fades and Stable Road Detail switches have been removed. Their renderer behavior runs automatically. Making these automatic is a UI decision, **not a claim that the remaining blue-glow or road-flicker reports are resolved**.
+The old Packed Color Correction, Full-Screen Fades and Stable Road Detail switches have been removed. Their renderer behavior runs automatically. Making these automatic is a UI decision, **not a claim that the remaining effect-coverage or road-flicker reports are resolved**.
+
+## Version 1.0 controls, HUD and glow correction
+
+The [feature guide](FEATURES.md) describes the native artwork, editable layouts, continuous multi-touch driving router and full-pad/tilt behavior. The redesign is default-on with the approved M5 factory layout; existing saved overrides and original-layout preferences survive updates.
+
+The raised HUD evaluates the audited vertex transform before safe framing. Eligible map and gauge draws move into device-corner frames. The padded ring quad is larger than the map fill and now receives the same minimap transform. Mixed eligible triangle/quad batches preserve independent transforms and draw order. See [implementation notes](CONTROL_OVERHAUL.md) for bounds and testing.
+
+Live M5 pixel history measured a red tone-mapped signal `(207,78,78)`, followed by two additive glow draws producing `(207,78,129)` and `(207,78,245)`. Their vertex shaders pass COLOR0 through as xyzw, unlike the seed shader's zyxw. The correction selects the normalized packed-color view for those two programs only; integer fetch and seed behavior remain intact. Real Metal tests cover red/yellow/green/blue and alpha, and updated M5 gameplay was confirmed by the user.
+
+The earlier tiled RGBA8 channel-composition correction remains separate: it preserves the audited tiled/linear distinction but did not resolve the glow report on its own. The small street-name atlas is blue/purple at source, consistent with original console gameplay references. This does not validate every green directional/freeway board.
+
+Road sun-specular math, a warm light constant and nonzero material/specular inputs were observed. No golden-road amplification was added from a night-versus-sunset comparison; matched time/weather/view evidence is still needed.
 
 ## The experimental native 60 FPS patch
 
@@ -79,7 +91,7 @@ The beta packages **603 native Metal title libraries**. XenosRecomp lineage prov
 
 The ALU-order correction preserves instruction-local source values when vector and scalar units read a shared destination register before either result is written. Emitting sequential host writes can otherwise make scalar arithmetic read the just-written vector result. Snapshot scopes remain inside instruction predication. Shader constants, semantics, masks and register indices must retain their original contract.
 
-Most normal play performs no runtime shader source translation. New missing shader pairs can be captured only with diagnostics enabled, under a fixed budget, for a later offline build. **Two newly observed programs are still absent in 0.1.0**; see Known Bugs.
+Most normal play performs no runtime shader source translation. New missing shader pairs can be captured only with diagnostics enabled, under a fixed budget, for a later offline build. **Two newly observed programs are still absent in 1.0**; see Known Bugs.
 
 ### Texture, color and presentation correctness
 
@@ -112,9 +124,9 @@ Release validation covers the signed device build, packaged library inventory, a
 
 ## Known bugs and limitations
 
-The full maintained list is [docs/KNOWN_BUGS.md](../docs/KNOWN_BUGS.md). The most important initial-beta issues are:
+The full maintained list is [docs/KNOWN_BUGS.md](../docs/KNOWN_BUGS.md). The most important remaining issues are:
 
-- **Blue distant traffic/light glows:** nearby red taillights can coexist with blue distant glows. Root cause is unresolved. A bounded color-source trace is included for a diagnostic play session; there is no claim of a completed lighting fix.
+- **Light-glow coverage:** the two measured post-tonemap red-to-blue passes are corrected and M5 gameplay was user-confirmed. Broader lighting/effect permutations still need testing; the fix is shader-specific.
 - **Two missing shaders:** VS `D866F0D1394908B8` and PS `F1DAD9A46DA1A834` were observed in the latest 60 FPS M5 run. Four adapter rejected draws were recorded in that session. These programs are not included in the 603-library package.
 - **Road texture flicker/shimmer:** automatic LOD behavior addresses one candidate cause; a complete regression pass is outstanding.
 - **Checkpoint smoke/colors:** shader coverage and packed-color changes were added after reports of missing smoke and wrong red/yellow colors. Correct appearance across all checkpoints is not yet confirmed.
@@ -124,7 +136,7 @@ The full maintained list is [docs/KNOWN_BUGS.md](../docs/KNOWN_BUGS.md). The mos
 
 ## Remaining optimization and engineering work
 
-Correctness comes first: collect the actual color inputs for the blue-glow draw, recover the two missing programs, and reproduce the new-game suspension issue. More performance work should then be based on paired measurements rather than lowering unrelated quality settings blindly.
+Correctness comes first: expand validation of the corrected glow paths, recover the two missing programs, and reproduce the new-game suspension issue. More performance work should then be based on paired measurements rather than lowering unrelated quality settings blindly.
 
 Priorities include long-session warm-device pacing, separating useful CPU execution from wall-clock waits, measuring render-pass bandwidth/resolve cost, bounding resource-cache maintenance, checking upload-ring pressure, and expanding deterministic regression scenes for particles, alpha, shadows, fades and streaming transitions. Native 60 FPS needs both CPU and GPU to fit the display budget.
 

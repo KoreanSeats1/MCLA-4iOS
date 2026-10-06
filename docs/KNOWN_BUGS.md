@@ -1,10 +1,10 @@
-# Known bugs — 0.1.0 initial beta
+# Known issues — 1.0
 
-This list distinguishes confirmed reports from fixes awaiting broader verification. It is part of the initial release, not a list of promises that every issue is solved.
+This list distinguishes confirmed reports from fixes awaiting broader verification. Version 1.0 retains open reports; it is not a promise that every issue is solved.
 
 | Issue | Evidence/status | Workaround / next step |
 |---|---|---|
-| Blue distant light/traffic glows | Live M5 pixel history shows two post-tonemap glow passes adding blue over a red signal. The control-overhaul test branch corrects their packed COLOR0 view; Metal tests pass, the updated M5 frame shows red signal glow, and the user confirms lights seem fixed. The street-sign color report remains open; the captured sign atlas itself is blue/white. | Compare red signals and taillight glows in the updated M5 test build. Broader effect coverage remains unverified. |
+| Blue distant light/traffic glows | Live M5 pixel history shows two post-tonemap glow passes adding blue over a red signal. Version 1.0 corrects their packed COLOR0 view; Metal tests pass, the updated M5 frame shows red signal glow, and the user confirms lights seem fixed. Small blue/purple street-name signs are blue at source and also appear in original console references; no forced green recolor is applied. Other sign materials require separate validation. | Compare red signals and taillight glows in the 1.0 build. Broader effect coverage remains unverified. |
 | Two missing shader programs | VS `D866F0D1394908B8`, PS `F1DAD9A46DA1A834` observed in the latest 60 FPS M5 run; 4 adapter rejected draws. Not among the 603 packaged programs. | Some geometry/effects may be absent when this pair is needed. Recovery/offline compilation pending. |
 | Road texture flicker or shimmer | User-reported. Hidden material LOD sharpening was removed; full root-cause/regression verification outstanding. | Try the default scene resolution/filtering when reporting. Do not assume all flicker is a texture issue; depth/overlap must be checked. |
 | Missing or wrong checkpoint smoke | Prior race reports on both devices; shader coverage and packed-color corrections added. Correct red/yellow start/checkpoint colors across all routes unconfirmed. | Include race/location and whether the smoke is absent or wrong-colored. |
@@ -18,3 +18,9 @@ This list distinguishes confirmed reports from fixes awaiting broader verificati
 | Source rebuild preparation | Public sources exclude original game data, generated AOT and local capture/compiler caches. Current tools require staged user-owned inputs. | Follow DEVELOPMENT.md; source ZIP alone is not a turnkey playable build. |
 
 The standard app does not implement MetalFX frame generation, online multiplayer acceptance, or every feature in desktop LARecomp's settings. A desktop feature existing upstream is not proof it is active on iOS.
+
+## HUD border and pavement follow-ups
+
+The remaining lower-left map ring was traced to a padded quad outside the fill classifier. Version 1.0 applies the exact same map transform to that quad. The captured-bounds regression passes, and the correction was installed on Air/M5; the final post-install gameplay screenshot was not obtained during that check. Broader HUD/menu/fade coverage remains open.
+
+Sun-reflection math and road specular inputs are present. Missing gold pavement shine has not been established from a night-versus-sunset comparison. Matching original-game time, weather and view angle is needed before changing reflection strength.

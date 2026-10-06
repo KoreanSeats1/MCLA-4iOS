@@ -14,8 +14,8 @@
 #import "MCLAControlArtwork.h"
 #import "MCLASlidingControls.h"
 
-// This test branch enables the in-game experiment by default. Dedicated
-// switches leave the original branch’s control preferences untouched.
+// Version 1.0 enables the redesigned controls and HUD by default. Retain the
+// dedicated preference keys so existing layouts survive the release update.
 static BOOL MCLAControlOverhaulEnabled(void) {
     NSString* override = NSProcessInfo.processInfo.environment[@"MCLA_CONTROL_OVERHAUL"];
     return override ? override.boolValue :
