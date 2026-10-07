@@ -2,6 +2,24 @@
 
 Release entries describe shipped behavior and validation separately. Version numbers do not imply that every original-game effect, device or race has been verified.
 
+## 1.0.1 — 2026-10-07
+
+Bugfix and CPU performance update. Marketing version 1.0.1, build 3, tag `v1.0.1`.
+
+- Replace the app and README icon with artwork provided by **Ricioly**.
+- Resize controls by holding a control and pinching anywhere, with 35%–250% authored sizing; expose Skip Intro Videos in the Play Mode settings.
+
+- Prepare only shader-consumed vertex streams, refreshing deferred bindings when needed; coalesce adjacent shader-constant snapshot ranges. Preserve live validation and byte-exact constants. Add differential stream/binding regressions and warm-device profiling support; sustained thermal frame-budget acceptance remains pending.
+
+- Port Theft4 0.3 geometry conversion equivalence to MCLA: reuse transformed meshes across shaders/declarations requiring identical ordered byte conversions, with bounded exact recipes and existing resource invalidation retained. Add whole-buffer differential/eviction regressions and on/off profiling support. See [performance audit](docs/PERFORMANCE_AUDIT_2026-10-06.md); device frame-time improvement is not yet measured.
+
+- Keep **Skip Intro Videos** enabled by default, but preserve the SWF constructor/context and request the game's natural skip before the startup video play call. The early Apple skip bypass caused a reported missing-title-logo regression; the revised build is installed on Air/M5, with title-screen visual acceptance pending. Gameplay cinematics remain governed by the game.
+- Keep rotating minimap borders and GPS decorations on the same translation and scale as the map fill. Classify their rotating footprint rather than only the unrotated rectangle; inspect mixed triangle/quad batches through the existing 4,096-vertex safety limit.
+- Add regressions covering all 360 map headings and orbiting GPS pointers, plus unrelated-panel rejection.
+- Resolve the embedded SDK version from its own checkout, preventing the app's `v1.0` tag from breaking subsequent builds.
+- Built and installed this correction on M5 iPad Pro and iPhone Air. Native Metal/signing verification passes with 603 shader libraries. Live fast-camera alignment remains to be checked.
+- Camera refocus-like blur remains under investigation: the user confirms it persists with both blur switches enabled or disabled. The DoF hook clears the CoC vector before composite upload; the motion-blur hooks suppress two parameter lookups/updates. This audit does not establish which pass causes the reported effect.
+
 ## 1.0 — 2026-10-05
 
 First 1.0 release of the custom control layout and related graphics corrections, built on the 0.1.0 Apple runtime/renderer baseline. Marketing version 1.0, build 2, release tag `v1.0`.

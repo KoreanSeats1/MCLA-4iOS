@@ -8,6 +8,8 @@
 #include "MCLAResourceBindingReuse.h"
 #include "MCLAGeometryScratch.h"
 #include "MCLAVertexFixup.h"
+#include "MCLAActiveVertexStreams.h"
+#include "MCLAVertexConversionRecipe.h"
 #include "MCLAPackedTexture.h"
 #include "MCLATextureSwizzle.h"
 #include "MCLAVisualExperiments.h"
@@ -95,24 +97,8 @@ uint32_t SwapConstantRegisters(uint8_t *out, const uint8_t *in,
 uint64_t Hash(const void *p, size_t n, uint64_t h = 14695981039346656037ull) {
   return mcla::metal::FastHash(p, n, h);
 }
-uint32_t Semantic(uint8_t usage, uint8_t index) {
-  if ((usage == 0 || usage == 9) && index < 4)
-    return index;
-  if (usage == 3 && index < 4)
-    return 4 + index;
-  if (usage == 6 && index < 4)
-    return 8 + index;
-  if (usage == 7 && index == 0)
-    return 12;
-  if (usage == 5)
-    return index < 4 ? 13 + index : 16 + index;
-  if (usage == 10)
-    return index ? 32 : 17;
-  if (usage == 2)
-    return 18;
-  if (usage == 1)
-    return 19;
-  return UINT32_MAX;
+uint32_t Semantic(uint8_t usage,uint8_t index) {
+  return mcla::metal::VertexSemantic(usage,index);
 }
 MTLVertexFormat VertexFormat(uint32_t t, uint32_t numeric, bool packedColorCorrection) {
   switch (t) {
@@ -580,6 +566,9 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
     VertexUpload upload;
   };
   std::array<VertexReuse,17> vertexReuse_{};
+  mcla::metal::VertexConversionRecipes vertexRecipes_;
+  bool reuseEquivalentGeometry_=true;
+  uint64_t vertexAliasHits_=0,vertexPayloadHits_=0;
   std::array<VertexUpload,17> boundVertices_{};
   mcla::metal::ExactDrawKey<9> lastIndexKey_;
   Upload lastIndexUpload_{};
@@ -1805,6 +1794,24 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
     unsigned stride = inlineAddress ? inlineStride : bind.stride,
              offset = inlineAddress ? 0 : bind.offset;
     bool locked = false;
+    uint64_t recipeIdentity=0;
+    if(reuseEquivalentGeometry_ && stride) {
+      const bool rectangle=inlineAddress && currentPrimitive_==8;
+      const std::array<uint64_t,6> source{currentDeclarationVersion_,
+          decl.declaration,shader.info->hash,uint64_t(stream)<<32|stride,
+          visualExperiments_ & mcla::metal::PackedVertexColor,rectangle};
+      recipeIdentity=vertexRecipes_.Identity(source,[&] {
+        auto recipe=mcla::metal::BuildVertexConversionRecipe(decl,*shader.info,
+            stream,stride,bool(visualExperiments_ & mcla::metal::PackedVertexColor),
+            mcla::native::QuadFetchScaleWord(shader.info->hash).value_or(0),
+            [](unsigned usage,unsigned index){return Semantic(usage,index);});
+        if(recipe && rectangle) {
+          recipe->rectangleDeclaration=decl.declaration;
+          recipe->rectangleRevision=currentDeclarationVersion_;
+        }
+        return recipe;
+      });
+    }
     std::array<uint64_t,10> exactVertex{};
     auto remember = [&](VertexUpload upload) {
       if (!inlineAddress && !locked) {
@@ -1817,9 +1824,10 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
       auto p = P(bind.buffer, 32);
       if (!p)
         return {};
-      exactVertex={frames_,resourceRevision_,currentDeclarationVersion_,
-          uint64_t(decl.declaration)<<32|bind.buffer,shader.info->hash,
-          uint64_t(offset)<<32|stride};
+      exactVertex={frames_,resourceRevision_,
+          recipeIdentity?recipeIdentity:currentDeclarationVersion_,
+          recipeIdentity?uint64_t(bind.buffer):uint64_t(decl.declaration)<<32|bind.buffer,
+          recipeIdentity?0:shader.info->hash,uint64_t(offset)<<32|stride};
       memcpy(exactVertex.data()+6,p,32);
       if(vertexReuse_[stream].key.Matches(exactVertex)) {
         ++vertexReuses_;
@@ -1839,8 +1847,10 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
     // wrapper may use a prior proven alias; a new wrapper must prove payload
     // equality before it shares a transformed host buffer.
     std::array<uint64_t, 5> bits{
-        decl.declaration, shader.info->hash, uint64_t(offset) << 32 | stride,
-        uint64_t(address) << 32 | size, currentDeclarationVersion_};
+        recipeIdentity?0:decl.declaration,
+        recipeIdentity?recipeIdentity:shader.info->hash,
+        uint64_t(offset) << 32 | stride,uint64_t(address) << 32 | size,
+        recipeIdentity?0:currentDeclarationVersion_};
     const uint64_t interpretationKey = Hash(bits.data(), sizeof(bits));
     uint64_t key = interpretationKey, wrapperKey = 0;
     if (!inlineAddress && !locked) {
@@ -1853,6 +1863,7 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
         if (cached != buffers_.end()) {
           if(cached->second.frame!=frames_)bufferIndex_.Touch(*alias,frames_);
           cached->second.frame = frames_;
+          ++vertexAliasHits_;
           return remember({cached->second.buffer, 0});
         }
         bufferIndex_.Erase(*alias);
@@ -1896,6 +1907,7 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
       if (cached != buffers_.end()) {
         if(cached->second.frame!=frames_)bufferIndex_.Touch(key,frames_);
         cached->second.frame = frames_;
+        ++vertexPayloadHits_;
         bufferIndex_.AddOwner(key,bind.buffer);
         bufferIndex_.BindAlias(key,wrapperKey);
         return remember({cached->second.buffer, 0});
@@ -2007,12 +2019,15 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
   uint32_t visualExperiments_ = MCLAGraphicsVisualExperiments();
   std::array<uint64_t,128> colorAuditKeys_{};
   unsigned colorAuditCount_=0;
+  std::vector<std::array<float,2>> hudPointScratch_;
   bool InspectHUDDraw(const uint8_t* state,
       const ng::RegisterVertexDeclarationCommand& decl, uint32_t primitive,
       uint32_t start, uint32_t count, bool indexed, int32_t baseVertex,
       uint32_t inlineAddress, uint32_t inlineStride,
-      mcla::metal::HudBounds* bounds = nullptr, uint32_t availableCount = 0) {
+      mcla::metal::HudBounds* bounds = nullptr, uint32_t availableCount = 0,
+      std::span<std::array<float,2>> projected = {}) {
     if (count < 3 || count > (bounds ? 4096u : 6u)) return false;
+    if (!projected.empty() && (!bounds || projected.size()!=count)) return false;
     const ng::VertexElement* position = nullptr;
     for (unsigned i=0;i<decl.element_count;++i)
       if (decl.elements[i].usage == 0 && decl.elements[i].usage_index == 0)
@@ -2063,6 +2078,7 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
         const float px = F(state,12640) + (clip[0]/clip[3]+1)*.5f*F(state,12648);
         const float py = F(state,12644) + (1-clip[1]/clip[3])*.5f*F(state,12652);
         if (!std::isfinite(px) || !std::isfinite(py)) return false;
+        if (!projected.empty()) projected[i]={px,py};
         box.left=std::min(box.left,px); box.right=std::max(box.right,px);
         box.top=std::min(box.top,py); box.bottom=std::max(box.bottom,py);
       } else clips[i]=clip;
@@ -2346,13 +2362,18 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
                   primitive, count, indexed, x, y, w, h,
                   R(state,10436), R(state,10440));
     mcla::metal::HudMove hudMove{};
+    bool hudProjected=false;
     if ((MCLAGraphicsVisualExperiments() & mcla::metal::RaisedDrivingHUD) &&
         logicalTarget.width == 1280 && logicalTarget.height == 720 &&
         vs->info->hash == 0xF8B6972A1D56B354ULL && !fullScreenOverlay) {
       mcla::metal::HudBounds bounds{};
+      if (count>=3 && count<=4096) hudPointScratch_.resize(count);
       if (InspectHUDDraw(state,decl,primitive,start,count,indexed,
-                               baseVertex,data,stride,&bounds))
+                               baseVertex,data,stride,&bounds,0,
+                               count>=3 && count<=4096 ? std::span(hudPointScratch_) : std::span<std::array<float,2>>{})) {
+        hudProjected=true;
         hudMove=mcla::metal::RaisedHudMove(bounds);
+      }
       if (frames_ == hudTraceFrame_)
         REXLOG_INFO("MCLA HUD MOVE draw={} group={} bounds={:.1f},{:.1f},{:.1f},{:.1f} scale={} dx={} dy={}",
             draws_,hudMove.name,bounds.left,bounds.top,bounds.right,bounds.bottom,hudMove.scale,hudMove.x,hudMove.y);
@@ -2365,13 +2386,20 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
     if ((MCLAGraphicsVisualExperiments() & mcla::metal::RaisedDrivingHUD) &&
         logicalTarget.width==1280 && logicalTarget.height==720 &&
         vs->info->hash==0xF8B6972A1D56B354ULL && !fullScreenOverlay &&
-        hudMove.x==0 && hudMove.y==0 && hudStep && count<=256 && count%hudStep==0) {
+        hudMove.x==0 && hudMove.y==0 && hudStep && count<=4096 && count%hudStep==0) {
       bool anyMoved=false;
       for(uint32_t first=0;first<count;first+=hudStep) {
         mcla::metal::HudBounds bounds{};
         mcla::metal::HudMove move{};
-        if(InspectHUDDraw(state,decl,primitive,start+first,hudStep,indexed,
-                          baseVertex,data,stride,&bounds,count))
+        bool valid=false;
+        if(hudProjected) {
+          auto cached=mcla::metal::HudPointBounds(std::span<const std::array<float,2>>(hudPointScratch_).subspan(first,hudStep));
+          if(cached) {bounds=*cached;valid=true;}
+        } else {
+          valid=InspectHUDDraw(state,decl,primitive,start+first,hudStep,indexed,
+                          baseVertex,data,stride,&bounds,count);
+        }
+        if(valid)
           move=mcla::metal::RaisedHudMove(bounds);
         anyMoved |= move.x!=0 || move.y!=0;
         hudSlices.push_back(move);
@@ -3454,6 +3482,9 @@ class MetalRenderer final : public rex::system::IGraphicsSystem {
           reuseGeometryScratch_,vertexScratch_.uses(),vertexScratch_.growths(),
           indexScratch_.growths()+expandedIndexScratch_.growths(),
           vertexScratch_.capacity()+sizeof(uint32_t)*(indexScratch_.capacity()+expandedIndexScratch_.capacity()));
+      REXLOG_INFO("MCLA METAL geometry_equivalence={} recipes={} equivalent_sources={} vertex_alias_hits={} vertex_payload_hits={}",
+          reuseEquivalentGeometry_,vertexRecipes_.size(),vertexRecipes_.equivalents(),
+          vertexAliasHits_,vertexPayloadHits_);
       REXLOG_INFO("MCLA METAL shared_uploads={} shared_reuses={} push_calls={} push_skips={}",
           sharedConstantUploads_,sharedConstantReuses_,pushAddressCalls_,pushAddressSkips_);
       REXLOG_INFO("MCLA METAL dynamic_state_calls={} dynamic_state_skips={} depth_lookup_reuses={}",
@@ -3502,6 +3533,8 @@ public:
     profile_ = baseProfile_;
     if (const char* reuse = std::getenv("MCLA_METAL_DRAW_STATE_REUSE"))
       optimizeDrawState_ = std::strcmp(reuse,"0") != 0;
+    if (const char* reuse = std::getenv("MCLA_METAL_EQUIVALENT_GEOMETRY"))
+      reuseEquivalentGeometry_ = std::strcmp(reuse,"0") != 0;
     if (const char* reuse = std::getenv("MCLA_METAL_GEOMETRY_SCRATCH"))
       reuseGeometryScratch_ = std::strcmp(reuse,"0") != 0;
     if (const char* reuse = std::getenv("MCLA_METAL_BINDING_REUSE"))

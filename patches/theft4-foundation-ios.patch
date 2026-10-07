@@ -1059,3 +1059,15 @@ index 0000000..9547fcc
 +}  // namespace rex::kernel::xam
 +
 +REX_EXPORT(__imp__XamShowDeviceSelectorUI, rex::kernel::xam::XamShowDeviceSelectorUI_entry)
+diff --git a/glue/rexglue-sdk-main/CMakeLists.txt b/glue/rexglue-sdk-main/CMakeLists.txt
+index 5d56674..67643a6 100644
+--- a/glue/rexglue-sdk-main/CMakeLists.txt
++++ b/glue/rexglue-sdk-main/CMakeLists.txt
+@@ -218,4 +218,5 @@ rex_resolve_version(REXGLUE_FULL_VERSION
+     FLOOR_MAJOR ${PROJECT_VERSION_MAJOR}
+-    FLOOR_MINOR ${PROJECT_VERSION_MINOR})
+-
++    FLOOR_MINOR ${PROJECT_VERSION_MINOR}
++    SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
++# Resolve embedded SDK provenance separately from application release tags.
+ # Strip the -id trailer (if any) for the numeric-only version.

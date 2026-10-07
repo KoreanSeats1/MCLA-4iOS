@@ -1,4 +1,5 @@
 #include "../MCLAApp/runtime/MCLAVertexFixup.h"
+#include "../MCLAApp/runtime/MCLAVertexConversionRecipe.h"
 #include "../MCLAApp/runtime/MCLAGeometryScratch.h"
 #include "../MCLAApp/runtime/MCLAResourceBindingReuse.h"
 #include <array>
@@ -8,6 +9,9 @@
 #include <random>
 #include <vector>
 struct Attribute { unsigned semantic,numeric; };
+struct Element {unsigned stream,offset,type,usage,usage_index;};
+struct Declaration {unsigned element_count; std::array<Element,64> elements;};
+struct Shader {const Attribute* attributes;size_t count;};
 // Independent reference: original renderer's per-vertex conversion loop.
 __attribute__((noinline)) void Reference(uint8_t* dst,const uint8_t* src,size_t size,
     unsigned start,unsigned stride,uint32_t type,unsigned semantic,
@@ -67,6 +71,65 @@ int main() {
     }
     assert(baseline==optimized);
   }
+  // Whole-buffer differential test for shader-independent conversion recipes.
+  // Include unused fields, duplicate numeric inputs, stream filtering, overlaps,
+  // offsets larger than the stride, trailing bytes and the color experiment.
+  for(unsigned trial=0;trial<20000;++trial) {
+    const size_t size=random()%4097;const unsigned stride=1+random()%64;
+    const unsigned offset=random()%70,stream=random()%3;
+    const bool suppress=trial%2;
+    std::vector<uint8_t> src(size),expected(size),actual(size);
+    for(auto& b:src)b=uint8_t(random());
+    SwapVertexWords(expected.data(),src.data(),size);actual=expected;
+    std::array<Attribute,20> attrs;
+    for(auto& a:attrs)a={random()%5,random()%3};
+    Declaration decl{};decl.element_count=random()%65;
+    for(unsigned i=0;i<decl.element_count;++i) {
+      auto& el=decl.elements[i];
+      el={random()%3,random()%80,types[random()%std::size(types)],random()%5,0};
+      if(el.stream!=stream)continue;
+      if(suppress && el.type==0x182886)continue;
+      Reference(expected.data(),src.data(),size,offset+el.offset,stride,
+                el.type,el.usage,attrs.data(),attrs.size());
+    }
+    const auto semantic=[](unsigned usage,unsigned){return usage;};
+    auto recipe=BuildVertexConversionRecipe(decl,Shader{attrs.data(),attrs.size()},
+                                            stream,stride,suppress,0,semantic);
+    assert(recipe);
+    for(unsigned i=0;i<recipe->count;++i) {
+      const auto& w=recipe->writes[i];
+      ApplyVertexFixup(actual.data(),src.data(),size,offset+w.offset,stride,
+                      VertexFixup{w.halfCount,bool(w.packed),bool(w.swapColor)});
+    }
+    assert(actual==expected);
+    // Different input order and irrelevant float inputs require identical bytes.
+    std::reverse(attrs.begin(),attrs.end());
+    auto equivalent=BuildVertexConversionRecipe(decl,Shader{attrs.data(),attrs.size()},
+                                                stream,stride,suppress,0,semantic);
+    assert(recipe==equivalent);
+  }
+  VertexConversionRecipes recipes;
+  VertexConversionRecipe recipe;recipe.stride=32;
+  auto first=recipes.Identity({1,2,3,4,5,6},[&]{return std::optional{recipe};});
+  auto equivalent=recipes.Identity({7,8,9,10,11,12},[&]{return std::optional{recipe};});
+  assert(first && first==equivalent && recipes.equivalents()==1);
+  bool rebuilt=false;
+  assert(first==recipes.Identity({1,2,3,4,5,6},[&]{rebuilt=true;return std::optional{recipe};}));
+  assert(!rebuilt);
+  for(unsigned i=0;i<4200;++i) {
+    auto different=recipe;different.quadScaleWord=i+1;
+    auto id=recipes.Identity({i+100,0,0,0,0,0},[&]{return std::optional{different};});
+    assert(id>first && id!=equivalent && recipes.size()<=4096);
+  }
+  // A metadata eviction must never alias a still-live upload's old identity.
+  auto afterEviction=recipes.Identity({1,2,3,4,5,6},[&]{return std::optional{recipe};});
+  assert(afterEviction>first);
+  auto rectangle=recipe;rectangle.rectangleDeclaration=42;rectangle.rectangleRevision=7;
+  auto rectangleId=recipes.Identity({0,1,0,0,0,0},[&]{return std::optional{rectangle};});
+  assert(rectangleId!=afterEviction);
+  rectangle.rectangleRevision++;
+  assert(rectangleId!=recipes.Identity({0,2,0,0,0,0},[&]{return std::optional{rectangle};}));
+  printf("20,000 whole-buffer geometry recipe comparisons and cache eviction checks passed\n");
   // Host microbenchmark: one color attribute with a single matching semantic.
   std::vector<uint8_t> src(16384*32,0x1b),old=src,next=src;
   std::array<Attribute,20> attributes{};

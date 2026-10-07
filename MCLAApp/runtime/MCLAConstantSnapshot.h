@@ -1,4 +1,5 @@
 #pragma once
+#include "MCLADrawReuse.h"
 #include <array>
 #include <bit>
 #include <cstdint>
@@ -21,23 +22,18 @@ public:
       if (mask[b] == UINT64_MAX) {
         if (std::memcmp(bytes_.data() + b * 1024, source + b * 1024, 1024))
           return false;
-      } else for (uint64_t bits = mask[b]; bits; bits &= bits - 1) {
-        const unsigned offset = (b * 64 + std::countr_zero(bits)) * 16;
-        if (std::memcmp(bytes_.data() + offset, source + offset, 16)) return false;
+      } else for(uint64_t bits=mask[b];bits;) {
+        const unsigned first=std::countr_zero(bits),count=std::countr_one(bits>>first);
+        const unsigned offset=(b*64+first)*16;
+        if(std::memcmp(bytes_.data()+offset,source+offset,count*16))return false;
+        bits &= count==64?0:~(((uint64_t(1)<<count)-1)<<first);
       }
     }
     return true;
   }
   void Remember(const uint8_t* source, const uint64_t mask[4]) {
-    for (unsigned b = 0; b < 4; ++b) {
-      valid_[b] = mask[b];
-      if (mask[b] == UINT64_MAX)
-        std::memcpy(bytes_.data() + b * 1024, source + b * 1024, 1024);
-      else for (uint64_t bits = mask[b]; bits; bits &= bits - 1) {
-        const unsigned offset = (b * 64 + std::countr_zero(bits)) * 16;
-        std::memcpy(bytes_.data() + offset, source + offset, 16);
-      }
-    }
+    CopyConstantRegisters(bytes_.data(),source,mask);
+    std::memcpy(valid_.data(),mask,sizeof(valid_));
     initialized_ = true;
   }
 };

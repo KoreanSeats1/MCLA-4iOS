@@ -1,5 +1,6 @@
 #include "../MCLAApp/runtime/MCLAConstantSnapshot.h"
 #include <cassert>
+#include <chrono>
 #include <iostream>
 #include <random>
 int main() {
@@ -33,5 +34,41 @@ int main() {
     bool used=(mask[offset/1024]>>(offset/16%64))&1;
     assert(cache.Matches(bytes.data(),mask)==!used);
   }
+  // Independently reproduce the previous register-by-register algorithm.
+  struct Reference {
+    std::array<uint8_t,4096> bytes{};
+    __attribute__((noinline)) void Remember(const uint8_t* src,const uint64_t* mask) {
+      for(unsigned b=0;b<4;++b)for(uint64_t bits=mask[b];bits;bits&=bits-1) {
+        unsigned at=(b*64+std::countr_zero(bits))*16;
+        memcpy(bytes.data()+at,src+at,16);
+      }
+    }
+    __attribute__((noinline)) bool Matches(const uint8_t* src,const uint64_t* mask) {
+      for(unsigned b=0;b<4;++b)for(uint64_t bits=mask[b];bits;bits&=bits-1) {
+        unsigned at=(b*64+std::countr_zero(bits))*16;
+        if(memcmp(bytes.data()+at,src+at,16))return false;
+      }
+      return true;
+    }
+  } reference;
+  for(unsigned trial=0;trial<10000;++trial) {
+    uint64_t mask[4];for(auto& m:mask)m=(uint64_t(random())<<32)|random();
+    for(auto& b:bytes)b=uint8_t(random());
+    reference.Remember(bytes.data(),mask);cache.Remember(bytes.data(),mask);
+    for(unsigned i=0;i<4;++i)bytes[random()%4096]^=1;
+    assert(cache.Matches(bytes.data(),mask)==reference.Matches(bytes.data(),mask));
+  }
+  uint64_t clustered[4]={0x00000000001FFFFFull,0x000000FFFFF00000ull,0,0xFF00000000000000ull};
+  auto benchmark=[&](auto& bank) {
+    auto begin=std::chrono::steady_clock::now();unsigned matches=0;
+    for(unsigned i=0;i<200000;++i) {
+      bytes[4095]^=1;bank.Remember(bytes.data(),clustered);
+      matches+=bank.Matches(bytes.data(),clustered);
+    }
+    assert(matches==200000);
+    return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();
+  };
+  const double before=benchmark(reference),after=benchmark(cache);
+  std::cout<<"Clustered constant remember/compare host fixture: "<<before<<" -> "<<after<<" ms (not device frame time)\n";
   std::cout << "constant snapshot: exact mutations, masks, dynamic banks, frame reset passed\n";
 }

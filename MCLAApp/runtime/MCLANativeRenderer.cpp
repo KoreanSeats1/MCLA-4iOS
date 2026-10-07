@@ -1,6 +1,7 @@
 #include "MCLADiagnostics.h"
 #include "MCLANativeRenderer.h"
 #include "MCLADrawReuse.h"
+#include "MCLAActiveVertexStreams.h"
 #include "MCLACanonicalDrawState.h"
 #include "MCLANativeResolveABI.h"
 #include "MCLANativeClear.h"
@@ -70,8 +71,23 @@ mcla::native::MissingShaderCaptureBudget missingCaptureBudget;
 struct DeclarationSnapshot {
   uint32_t count = 0;
   std::array<uint8_t,64*12> bytes{};
+#if MCLA_DIRECT_METAL
+  std::array<ng::VertexElement,64> elements{};
+  const MCLAMetalShaderInfo* inputShader=nullptr;
+  uint32_t activeStreams=0xFFFF;
+#endif
 };
 std::unordered_map<uint32_t,DeclarationSnapshot> declarations;
+#if MCLA_DIRECT_METAL
+std::unordered_map<uint64_t,const MCLAMetalShaderInfo*> shaderInputs;
+uint64_t vertexStreamChecks=0,vertexStreamChecksSkipped=0;
+bool ActiveStreamPreparation() {
+  static const bool enabled=[] {
+    const char* flag=std::getenv("MCLA_ACTIVE_STREAM_PREPARATION");
+    return !flag || std::strcmp(flag,"0")!=0;
+  }();return enabled;
+}
+#endif
 struct TiledSurface { uint32_t dimensions; uint32_t width; uint32_t height; };
 std::unordered_map<uint32_t,TiledSurface> tiledSurfaces;
 std::atomic<uint64_t> surfaceRevision{0};
@@ -181,6 +197,9 @@ uint32_t Shader(uint64_t hash,bool vertex) {
   uint32_t handle=nextShader++;
   ng::RegisterShaderCommand c; c.shader=handle;c.hash=hash;c.stage=vertex?ng::ShaderStage::kVertex:ng::ShaderStage::kPixel;
   if(!Submit(c))return 0;
+#if MCLA_DIRECT_METAL
+  if(vertex)shaderInputs.emplace(hash,&*entry);
+#endif
   shaders.emplace(hash,handle);return handle;
 }
 ng::SurfaceDescriptor Surface(const uint8_t* base,uint32_t handle) {
@@ -310,6 +329,7 @@ bool MCLANativeDraw(const uint8_t* base,uint32_t dev,uint32_t prim,uint32_t coun
     ng::SetShaderCommand c{{sizeof(c),type},dev,handle};if(Submit(c))last=handle;};
   bindShader(v,lastVS,ng::CommandType::kSetVertexShader);bindShader(p,lastPS,ng::CommandType::kSetPixelShader);
   uint32_t decl=R(device,11820);
+  uint32_t activeStreams=0xFFFF;
   if(decl && Readable(decl,52)) {
     auto* obj=P(base,decl);const uint32_t n=R(obj,24);
     if(!n || n>64 || !Readable(decl,52+uint64_t(n)*12))return false;
@@ -326,17 +346,49 @@ bool MCLANativeDraw(const uint8_t* base,uint32_t dev,uint32_t prim,uint32_t coun
       if(Submit(c)) {
         auto& saved=declarations[decl];saved.count=n;
         std::memcpy(saved.bytes.data(),obj+52,n*12);
+#if MCLA_DIRECT_METAL
+        std::copy_n(c.elements,n,saved.elements.begin());
+        saved.inputShader=nullptr;
+#endif
       }
       lastDecl=UINT32_MAX;
     }
     if(lastDecl!=decl){ng::SetVertexDeclarationCommand c;c.device=dev;c.declaration=decl;if(Submit(c))lastDecl=decl;}
+#if MCLA_DIRECT_METAL
+    if(ActiveStreamPreparation()) {
+      auto snapshot=declarations.find(decl);
+      if(snapshot!=declarations.end()) {
+        auto& saved=snapshot->second;
+        if(!saved.inputShader || saved.inputShader->hash!=vs) {
+          auto info=shaderInputs.find(vs);
+          if(info!=shaderInputs.end()) {
+            saved.activeStreams=mcla::metal::ActiveVertexStreams(
+                std::span<const ng::VertexElement>(saved.elements.data(),saved.count),
+                std::span<const MCLAMetalAttribute>(info->second->attributes,info->second->count)).value_or(0xFFFF);
+            saved.inputShader=info->second;
+          } else saved.inputShader=nullptr;
+        }
+        if(saved.inputShader)activeStreams=saved.activeStreams;
+      }
+    }
+#endif
   }
   ng::NativeDirtyState dirty;dirty.words.fill(UINT64_MAX);
   if(data){if(!Readable(data,uint64_t(count)*stride)||uint64_t(count)*stride>UINT32_MAX)return false;
     ng::DrawPrimitiveUpCommand c;c.device=dev;c.primitive_type=prim;c.vertex_count=count;
     c.stride=stride;c.vertex_data=data;c.vertex_data_size=count*stride;c.dirty_state=dirty;Submit(c);
   }else{
-    for(uint32_t i=0;i<16;++i){uint32_t buffer=R(device,12460+i*4);
+#if MCLA_DIRECT_METAL
+    if(mcla::DiagnosticsEnabled()) {
+      const auto used=std::popcount(activeStreams&0xFFFF);
+      vertexStreamChecks+=used;vertexStreamChecksSkipped+=16-used;
+    }
+#endif
+    for(uint32_t i=0;i<16;++i){
+#if MCLA_DIRECT_METAL
+      if(!(activeStreams&(1u<<i)))continue;
+#endif
+      uint32_t buffer=R(device,12460+i*4);
       ng::SetVertexStreamCommand c;c.device=dev;c.stream=i;
       // Explicit unbinds prevent the previous pass's stream state from
       // surviving into a draw whose guest binding is null. The title repeats
@@ -472,6 +524,10 @@ bool MCLANativePresent(uint8_t* base,uint32_t dev,uint32_t texture){
   if(mcla::DiagnosticsEnabled() && (presents<=5 || presents%120==0)){
     char msg[384];std::snprintf(msg,sizeof(msg),"backend=%s native_title_takeover=1 generic_cp=0 native_draws=%llu resolves=%llu presents=%llu rejected=%llu missing_unique=%zu",MCLA_DIRECT_METAL?"mcla-handwritten-metal":"mcla-title-vulkan",draws,resolves,presents,rejected,missingVertexShaders.size()+missingPixelShaders.size());
     MCLAPublishRuntimeGpuTelemetry(msg);REXLOG_INFO("{}",msg);
+#if MCLA_DIRECT_METAL
+    REXLOG_INFO("MCLA native active_stream_preparation={} stream_checks={} skipped_stream_checks={}",
+        ActiveStreamPreparation(),vertexStreamChecks,vertexStreamChecksSkipped);
+#endif
     REXLOG_INFO("MCLA native definition_reuse={} definition_hits={} definition_decodes={}",
         ReuseShaderDefinitions(),definitionSnapshots[0].hits()+definitionSnapshots[1].hits(),
         definitionSnapshots[0].decodes()+definitionSnapshots[1].decodes());

@@ -1,4 +1,4 @@
-# UI and feature guide — 1.0
+# UI and feature guide — 1.0.1
 
 [README](../README.md) · [Changelog](../CHANGELOG.md) · [Technical notes](TECHNICAL_NOTES.md)
 
@@ -38,7 +38,7 @@ The original arrangement remains selectable through **Experimental control overh
 
 1. Enter **EDIT** during gameplay. Driving inputs are released while editing.
 2. Drag a control to reposition it. Its center is saved as normalized safe-area coordinates.
-3. Pinch a control to resize it within the permitted bounds.
+3. Hold a control with one finger and pinch anywhere with a second finger to resize it. Sizes range from 35% to 250% of the authored size, bounded by the screen.
 4. Double-tap a palette item to deploy it. Double-tap a deployed optional action to return it to the palette.
 5. Choose **DONE**. The changed layout is used immediately and stored automatically.
 
@@ -89,6 +89,8 @@ The padded map-border quad extends beyond the map fill's bounds. Version 1.0 rec
 Touch layout editing does not change those fixed HUD anchors. The HUD relocation is deliberately bounded, not a semantic rewrite of every movie/menu draw. Broader pause/GPS/race-overlay coverage remains a validation task.
 
 ## Graphics controls
+
+The October 6 follow-up adds Skip Intro Videos under Graphics → Play Mode, enabled by default and applied at launch. The companion guest mask fix keeps the uninitialized intro-only render stage disabled. This option skips startup movies; it does not disable story cinematics.
 
 The standard app exposes scene height, spatial FSR, filtering, bloom intensity, separate motion-blur/DoF switches, Retail Mode, the diagnostic graph and experimental Native 60 FPS. A separate SMAA lab build exists in source; its SMAA switch is not a feature of the standard 1.0 IPA.
 

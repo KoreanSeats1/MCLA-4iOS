@@ -37,6 +37,9 @@ void MCLAGraphicsSetMotionBlurDisabled(bool disabled);
 bool MCLAGraphicsMotionBlurDisabled(void);
 void MCLAGraphicsSetDepthOfFieldDisabled(bool disabled);
 bool MCLAGraphicsDepthOfFieldDisabled(void);
+// Launch-only: skip startup movies while retaining gameplay cinematics.
+void MCLAGraphicsSetSkipIntro(bool enabled);
+bool MCLAGraphicsSkipIntro(void);
 // Launch-only: one rate controls guest timing and both host pacers.
 void MCLAGraphicsSetExperimental60FPS(bool enabled);
 bool MCLAGraphicsExperimental60FPS(void);

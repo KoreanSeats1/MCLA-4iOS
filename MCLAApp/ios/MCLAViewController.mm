@@ -13,6 +13,7 @@
 #include "MCLAMetalPresentation.h"
 #import "MCLAControlArtwork.h"
 #import "MCLASlidingControls.h"
+#import "MCLAControlResizeGesture.h"
 
 // Version 1.0 enables the redesigned controls and HUD by default. Retain the
 // dedicated preference keys so existing layouts survive the release update.
@@ -133,6 +134,7 @@ static void MCLARegisterGraphicsDefaults(void) {
         @"MCLADisableMotionBlur": @NO,
         @"MCLADisableDepthOfField": @NO,
         @"MCLAExperimental60FPS": @NO,
+        @"MCLASkipIntro": @YES,
         @"MCLATouchEnabledControlOverhaulTest": @YES,
         @"MCLATiltEnabled": @NO,
         @"MCLATiltInvert": @NO,
@@ -141,6 +143,9 @@ static void MCLARegisterGraphicsDefaults(void) {
         @"MCLATouchActiveControlsOverhaul": MCLAOverhaulControls(),
     }];
     mcla::SetDiagnosticsEnabled(![NSUserDefaults.standardUserDefaults boolForKey:@"MCLARetailMode"]);
+    // Explicit developer launches can capture without changing retail preferences.
+    if ([NSProcessInfo.processInfo.environment[@"MCLA_AUDIT_CAPTURE"] boolValue])
+        mcla::SetDiagnosticsEnabled(true);
 #if MCLA_SMAA_LAB
     [NSUserDefaults.standardUserDefaults registerDefaults:@{@"MCLASMAAEnabled": @YES}];
 #endif
@@ -588,6 +593,7 @@ static void MCLARegisterGraphicsDefaults(void) {
 - (NSInteger)numberOfSectionsInTableView:(UITableView*)tableView { return 5; }
 - (NSInteger)tableView:(UITableView*)tableView numberOfRowsInSection:(NSInteger)section {
     if (section == 4) return 1;
+    if (section == 2) return 2;
     if (section == 0) return 2;
     if (section == 1) {
 #if MCLA_SMAA_LAB
@@ -605,7 +611,7 @@ static void MCLARegisterGraphicsDefaults(void) {
     if (section == 4) return @"60 FPS is under evaluation and needs more performance headroom. Off by default; apply on the next launch. 30 FPS is the standard target.";
     if (section == 0) return self.settingsLocked ? @"Close and relaunch to change scene resolution. Upscaling can change during play." : @"720p gives the most room for a steady 30 FPS. Upscaling sharpens the image to fit your screen.";
     if (section == 1) return @"Filtering, bloom, motion blur and depth of field apply on the next launch.";
-    if (section == 2) return @"Retail Mode keeps logs, captures and profiling off. Change before launching.";
+    if (section == 2) return @"Play Mode settings apply on the next launch. Skip Intro Videos is on by default.";
     return mcla::DiagnosticsEnabled() ? @"Double-tap the graph during play to record 20 seconds of frame timings." : @"Turn Retail Mode off before launching to enable the frame graph.";
 }
 - (UITableViewCell*)tableView:(UITableView*)tableView cellForRowAtIndexPath:(NSIndexPath*)path {
@@ -644,9 +650,12 @@ static void MCLARegisterGraphicsDefaults(void) {
     } else if (path.section == 1) {
         title = @"SMAA · High"; detail = @"Smooth edges before upscaling"; icon = @"triangle";
         key = @"MCLASMAAEnabled"; action = @selector(smaaChanged:); on = [defaults boolForKey:key];
-    } else if (path.section == 2) {
+    } else if (path.section == 2 && path.row == 0) {
         title = @"Retail Mode"; detail = @"Play without diagnostic logging or captures"; icon = @"steeringwheel";
         key = @"MCLARetailMode"; action = @selector(retailModeChanged:); on = [defaults boolForKey:key];
+    } else if (path.section == 2) {
+        title = @"Skip Intro Videos"; detail = @"Go straight past startup movies"; icon = @"forward.end";
+        key = @"MCLASkipIntro"; action = @selector(skipIntroChanged:); on = [defaults boolForKey:key];
     } else if (path.section == 4) {
         title = @"Native 60 FPS";
         detail = @"Experimental · Real frame timing with camera and suspension corrections; may increase heat";
@@ -689,6 +698,7 @@ static void MCLARegisterGraphicsDefaults(void) {
     for (NSString* key in baseline) [defaults setObject:baseline[key] forKey:key];
     for (NSString* key in @[@"MCLAExperimental60FPS"])
         [defaults setBool:NO forKey:key];
+    [defaults setBool:YES forKey:@"MCLASkipIntro"];
     MCLAGraphicsSetFSREnabled([defaults boolForKey:@"MCLAFSREnabled"]);
     MCLAGraphicsSetMotionBlurDisabled([defaults boolForKey:@"MCLADisableMotionBlur"]);
     MCLAGraphicsSetDepthOfFieldDisabled([defaults boolForKey:@"MCLADisableDepthOfField"]);
@@ -699,6 +709,9 @@ static void MCLARegisterGraphicsDefaults(void) {
     if (self.settingsLocked) return;
     [self saveSwitch:sender key:sender.accessibilityIdentifier];
     [self updateFrameRateHeader];
+}
+- (void)skipIntroChanged:(UISwitch*)sender {
+    if (!self.settingsLocked) [self saveSwitch:sender key:@"MCLASkipIntro"];
 }
 - (void)depthOfFieldChanged:(UISwitch*)sender {
     if (self.settingsLocked) return;
@@ -821,6 +834,10 @@ static void MCLARegisterGraphicsDefaults(void) {
 @property(nonatomic, strong) UIButton* controlsButton;
 @property(nonatomic, strong) UIButton* editButton;
 @property(nonatomic, strong) UILabel* layoutHint;
+@property(nonatomic, strong) MCLAControlResizeGesture* controlResize;
+@property(nonatomic, assign) BOOL exportedControlLayout;
+@property(nonatomic, assign) CFTimeInterval nextAuditCapture;
+@property(nonatomic, assign) NSUInteger auditCaptureCount;
 @property(nonatomic, copy) NSString* gameRoot;
 @property(nonatomic, strong) NSTimer* statusTimer;
 @property(nonatomic, strong) MCLALauncherView* panel;
@@ -985,7 +1002,7 @@ static void MCLARegisterGraphicsDefaults(void) {
     [self.view addSubview:self.performanceGraph];
     self.layoutHint = [[UILabel alloc] init];
     self.layoutHint.translatesAutoresizingMaskIntoConstraints = NO;
-    self.layoutHint.text = @"DRAG · PINCH · 3-FINGER TAP FOR DONE";
+    self.layoutHint.text = @"HOLD A CONTROL · PINCH ANYWHERE TO RESIZE · 3-FINGER TAP FOR DONE";
     self.layoutHint.textAlignment = NSTextAlignmentCenter;
     self.layoutHint.font = [UIFont systemFontOfSize:13 weight:UIFontWeightHeavy];
     self.layoutHint.textColor = UIColor.whiteColor;
@@ -1045,6 +1062,19 @@ static void MCLARegisterGraphicsDefaults(void) {
     ]];
 
     [self buildDrivingControlsWithSafe:safe];
+    self.controlResize=[[MCLAControlResizeGesture alloc] initWithTarget:self action:@selector(resizeHeldControl:)];
+    self.controlResize.enabled=NO;
+    self.controlResize.delegate=self;
+    __weak MCLAViewController* resizeOwner=self;
+    self.controlResize.selectControl=^UIView*(CGPoint point) {
+        MCLAViewController* owner=resizeOwner;
+        if (!owner.editingTouchLayout) return nil;
+        UIView* hit=[owner.view hitTest:point withEvent:nil];
+        for (UIView* candidate=hit;candidate && candidate!=owner.view;candidate=candidate.superview)
+            if ([owner.layoutControls.allValues containsObject:candidate]) return candidate;
+        return nil;
+    };
+    [self.view addGestureRecognizer:self.controlResize];
     self.motionManager = [[CMMotionManager alloc] init];
     self.motionManager.deviceMotionUpdateInterval = 1.0 / 60.0;
     [NSNotificationCenter.defaultCenter addObserver:self
@@ -1234,12 +1264,9 @@ static void MCLARegisterGraphicsDefaults(void) {
     UIPanGestureRecognizer* pan = [[UIPanGestureRecognizer alloc]
         initWithTarget:self action:@selector(dragTouchControl:)];
     pan.maximumNumberOfTouches = 1;
+    pan.delegate=self;
     pan.enabled = NO;
     [control addGestureRecognizer:pan];
-    UIPinchGestureRecognizer* pinch = [[UIPinchGestureRecognizer alloc]
-        initWithTarget:self action:@selector(pinchTouchControl:)];
-    pinch.enabled = NO;
-    [control addGestureRecognizer:pinch];
     UITapGestureRecognizer* remove = [[UITapGestureRecognizer alloc]
         initWithTarget:self action:@selector(returnControlToPalette:)];
     remove.numberOfTapsRequired = 2;
@@ -1502,9 +1529,9 @@ static void MCLARegisterGraphicsDefaults(void) {
             if (authored) defaultSize=@[@(authored[0].doubleValue*scale),@(authored[1].doubleValue*scale)];
         }
         NSArray<NSNumber*>* savedSize = [self touchSizeForKey:key];
-        // Keep edit controls usable: roughly 55%–155% of their authored size.
-        const CGFloat minScale = 0.55;
-        const CGFloat maxScale = 1.55;
+        // Keep edit controls usable: 35%–250% of their authored size.
+        const CGFloat minScale = 0.35;
+        const CGFloat maxScale = 2.5;
         const CGFloat width = fmax(defaultSize[0].doubleValue * minScale,
             fmin(defaultSize[0].doubleValue * maxScale, savedSize[0].doubleValue));
         const CGFloat height = fmax(defaultSize[1].doubleValue * minScale,
@@ -1534,23 +1561,29 @@ static void MCLARegisterGraphicsDefaults(void) {
     }
 }
 
-- (void)pinchTouchControl:(UIPinchGestureRecognizer*)pinch {
+- (void)resizeHeldControl:(MCLAControlResizeGesture*)pinch {
     if (!self.editingTouchLayout) return;
-    UIView* control = pinch.view;
+    UIView* control = pinch.control;
     NSString* key = [control.accessibilityIdentifier
         stringByReplacingOccurrencesOfString:@"mcla.touch." withString:@""];
     NSArray<NSNumber*>* defaultSize = self.layoutDefaultSizes[key];
     if (!defaultSize) return;
-    if (pinch.state == UIGestureRecognizerStateBegan)
-        pinch.scale = 1.0;
     const CGFloat currentWidth = self.layoutWidth[key].constant;
     const CGFloat currentHeight = self.layoutHeight[key].constant;
     const CGFloat nextWidth = currentWidth * pinch.scale;
     const CGFloat nextHeight = currentHeight * pinch.scale;
-    pinch.scale = 1.0;
     NSMutableDictionary* sizes = [[NSUserDefaults.standardUserDefaults
         dictionaryForKey:MCLATouchPreference(@"MCLATouchLayoutSizes")] mutableCopy] ?: [NSMutableDictionary dictionary];
-    sizes[key] = @[@(nextWidth), @(nextHeight)];
+    CGRect safe=[self touchSafeRect];
+    CGFloat authoredScale=MIN(safe.size.width/1280.0,safe.size.height/720.0);
+    NSArray* authored=MCLAControlOverhaulEnabled() ? MCLAOverhaulSizes()[key] : nil;
+    CGFloat baseWidth=authored ? [authored[0] doubleValue]*authoredScale : defaultSize[0].doubleValue;
+    CGFloat baseHeight=authored ? [authored[1] doubleValue]*authoredScale : defaultSize[1].doubleValue;
+    CGFloat factor=MIN(nextWidth/currentWidth,nextHeight/currentHeight);
+    CGFloat minimum=MAX(baseWidth*.35/currentWidth,baseHeight*.35/currentHeight);
+    CGFloat maximum=MIN(MIN(baseWidth*2.5,safe.size.width-8)/currentWidth,MIN(baseHeight*2.5,safe.size.height-8)/currentHeight);
+    factor=MAX(minimum,MIN(maximum,factor));
+    sizes[key] = @[@(currentWidth*factor), @(currentHeight*factor)];
     [NSUserDefaults.standardUserDefaults setObject:sizes forKey:MCLATouchPreference(@"MCLATouchLayoutSizes")];
     [self applyTouchLayout];
     [self.view layoutIfNeeded];
@@ -1565,6 +1598,22 @@ static void MCLARegisterGraphicsDefaults(void) {
     for (UIView* control in self.layoutControls.allValues) [self applyTouchControlAppearance:control];
     self.slideControls.frame=self.view.bounds;
     [self.slideControls setNeedsDisplay];
+    if (!self.exportedControlLayout && self.gameVisible && self.view.bounds.size.width>self.view.bounds.size.height &&
+        [NSProcessInfo.processInfo.environment[@"MCLA_EXPORT_CONTROL_LAYOUT"] boolValue]) {
+        CGRect safe=[self touchSafeRect];
+        CGFloat scale=MIN(safe.size.width/1280.0,safe.size.height/720.0);
+        NSMutableDictionary* positions=[NSMutableDictionary dictionary];
+        NSMutableDictionary* sizes=[NSMutableDictionary dictionary];
+        for (NSString* key in self.layoutControls) {
+            positions[key]=[self touchPositionForKey:key];
+            sizes[key]=@[@(self.layoutWidth[key].constant/scale),@(self.layoutHeight[key].constant/scale)];
+        }
+        NSDictionary* snapshot=@{@"positions":positions,@"authoredSizes":sizes,@"safeWidth":@(safe.size.width),@"safeHeight":@(safe.size.height),
+            @"activeControls":[NSUserDefaults.standardUserDefaults arrayForKey:MCLATouchPreference(@"MCLATouchActiveControls")] ?: MCLAOverhaulControls(),
+            @"tiltEnabled":@([NSUserDefaults.standardUserDefaults boolForKey:@"MCLATiltEnabled"])};
+        NSString* path=[NSHomeDirectory() stringByAppendingPathComponent:@"Documents/mcla-control-layout.json"];
+        self.exportedControlLayout=[[NSJSONSerialization dataWithJSONObject:snapshot options:NSJSONWritingPrettyPrinted error:nil] writeToFile:path atomically:YES];
+    }
     if (self.runtimeStartPending && self.view.bounds.size.width > self.view.bounds.size.height) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self startRuntimeAfterOrientation]; });
     }
@@ -1589,6 +1638,9 @@ static void MCLARegisterGraphicsDefaults(void) {
 
 - (void)dragTouchControl:(UIPanGestureRecognizer*)pan {
     if (!self.editingTouchLayout) return;
+    if (self.controlResize.state==UIGestureRecognizerStateBegan || self.controlResize.state==UIGestureRecognizerStateChanged) {
+        [pan setTranslation:CGPointZero inView:self.view]; return;
+    }
     UIView* control = pan.view;
     NSString* key = [control.accessibilityIdentifier
         stringByReplacingOccurrencesOfString:@"mcla.touch." withString:@""];
@@ -1623,6 +1675,7 @@ static void MCLARegisterGraphicsDefaults(void) {
         return;
     }
     self.editingTouchLayout = !self.editingTouchLayout;
+    self.controlResize.enabled=self.editingTouchLayout;
     if (self.editingTouchLayout) { MCLAResetVirtualGamepad(); [self clearSlidingInputs];
         self.overhaulGasHeld=NO; self.overhaulHandbrakeHeld=NO; }
     for (UIView* control in self.layoutControls.allValues) {
@@ -1806,6 +1859,7 @@ static void MCLARegisterGraphicsDefaults(void) {
     }
     if (!active && self.editingTouchLayout) {
         self.editingTouchLayout = NO;
+        self.controlResize.enabled=NO;
         [self.editButton setTitle:@"EDIT" forState:UIControlStateNormal];
         self.layoutHint.hidden = YES;
         for (UIView* control in self.layoutControls.allValues) {
@@ -2000,6 +2054,14 @@ static void MCLARegisterGraphicsDefaults(void) {
         [NSUserDefaults.standardUserDefaults boolForKey:@"MCLAPerformanceOverlay"]);
     if (!self.performanceGraph.hidden)
         [self.performanceGraph setNeedsDisplay];
+    if ([NSProcessInfo.processInfo.environment[@"MCLA_AUDIT_CAPTURE"] boolValue] &&
+        graphics.titleDrivenFrames>=1200 && self.auditCaptureCount<3 &&
+        CACurrentMediaTime()>=self.nextAuditCapture && !MCLAGraphicsPerformanceCaptureActive()) {
+        if (MCLAGraphicsStartPerformanceCapture()) {
+            ++self.auditCaptureCount;
+            self.nextAuditCapture=CACurrentMediaTime()+30;
+        }
+    }
 
     // The controlled device test can activate the title screen without UI
     // automation. Frame 680 is after the loading/logo sequence on the verified
@@ -2131,6 +2193,7 @@ static void MCLARegisterGraphicsDefaults(void) {
     MCLAGraphicsSetMotionBlurDisabled([NSUserDefaults.standardUserDefaults boolForKey:@"MCLADisableMotionBlur"]);
     MCLAGraphicsSetDepthOfFieldDisabled([NSUserDefaults.standardUserDefaults boolForKey:@"MCLADisableDepthOfField"]);
     MCLAGraphicsSetExperimental60FPS([NSUserDefaults.standardUserDefaults boolForKey:@"MCLAExperimental60FPS"]);
+    MCLAGraphicsSetSkipIntro([NSUserDefaults.standardUserDefaults boolForKey:@"MCLASkipIntro"]);
     // Rendering correctness fixes are automatic, independent of saved legacy switches.
     MCLAGraphicsSetVisualExperiments(7u | (MCLAControlOverhaulEnabled() ? 8u : 0u));
     [self.metalView setNeedsLayout];

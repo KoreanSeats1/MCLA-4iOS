@@ -281,6 +281,9 @@ bool MCLAGraphicsDepthOfFieldDisabled(void) { return gDepthOfFieldDisabled.load(
 static std::atomic<bool> gMotionBlurDisabled{false};
 void MCLAGraphicsSetMotionBlurDisabled(bool disabled) { gMotionBlurDisabled.store(disabled,std::memory_order_relaxed); }
 bool MCLAGraphicsMotionBlurDisabled(void) { return gMotionBlurDisabled.load(std::memory_order_relaxed); }
+static std::atomic<bool> gSkipIntro{true};
+void MCLAGraphicsSetSkipIntro(bool enabled) { gSkipIntro.store(enabled,std::memory_order_relaxed); }
+bool MCLAGraphicsSkipIntro(void) { return gSkipIntro.load(std::memory_order_relaxed); }
 
 void MCLAGraphicsSetApplicationActive(bool active) {
     gApplicationActivity.Set(active);

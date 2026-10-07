@@ -1,18 +1,22 @@
 diff --git a/src/mc_engine/hooks.cpp b/src/mc_engine/hooks.cpp
-index 5283518..be69dfa 100644
+index 5283518..9f6d376 100644
 --- a/src/mc_engine/hooks.cpp
 +++ b/src/mc_engine/hooks.cpp
-@@ -4166,9 +4166,49 @@ void Hook_LzxDecompressPost(PPCRegister& r1, PPCRegister& r3) {
-     }
+@@ -1870,2 +1870,4 @@ bool SkipIntro() {
  }
++// Apple uses the initialization-preserving hook below; desktop keeps its path.
++bool MCLA_SkipIntroVideos() { return false; }
+
+@@ -4168,2 +4170,8 @@ void Hook_LzxDecompressPost(PPCRegister& r1, PPCRegister& r3) {
  #else // REXGLUE_HAS_XEO3_TARGET
++#include <rex/logging.h>
 +#include "frame_delta_guard.h"
 +#include <rex/runtime.h>
 +#include <rex/memory.h>
 +#include <cstring>
 +#include <rex/chrono/clock.h>
  // XEO3 stubs: empty implementations so the linker resolves codegen calls.
- 
+@@ -4171,2 +4179,38 @@ void Hook_LzxDecompressPost(PPCRegister& r1, PPCRegister& r3) {
  #include <rex/ppc/context.h>
 +#include <cmath>
 +#include <cstdint>
@@ -31,6 +35,7 @@ index 5283518..be69dfa 100644
 +
 +extern "C" bool MCLAGraphicsMotionBlurDisabled(void);
 +extern "C" bool MCLAGraphicsDepthOfFieldDisabled(void);
++extern "C" bool MCLAGraphicsSkipIntro(void);
 +extern "C" void MCLAGraphicsGuestVideoSize(uint32_t* width, uint32_t* height);
 +
 +static bool MCLADeviceAspect(PPCRegister& value, unsigned hookBit) {
@@ -49,25 +54,47 @@ index 5283518..be69dfa 100644
 +    value.f64 = double(width) / double(height);
 +    return true;
 +}
- 
- void Hook_CacheVinylPaint(PPCRegister& r3, PPCRegister& r4, PPCRegister& r5, PPCRegister& r6) {}
- void Hook_PhotoModeCapture(PPCRegister& r3) {}
-@@ -4180,23 +4220,43 @@ void ApplyDebugOptions() {}
+
+@@ -4180,8 +4224,33 @@ void ApplyDebugOptions() {}
  void InitHooks() {}
++#include "../../../MCLAApp/runtime/MCLAIntroSkip.h"
++// The early hook bypasses SWF construction/context initialization. Keep that
++// path on Apple; skip only the video start after the initialized movie exists.
  bool SkipIntro() { return false; }
- void MCLA_SkipIntroRenderPassMask(PPCRegister& r4) {}
+-void MCLA_SkipIntroRenderPassMask(PPCRegister& r4) {}
 -bool Patch_AspectRatio_82233EB4(PPCRegister& f0) { return false; }
 -bool Patch_AspectRatio_82214BB8(PPCRegister& f10) { return false; }
 -bool Patch_AspectRatio_822E5E68(PPCRegister& f12) { return false; }
 -bool Patch_AspectRatio_8223E5E0(PPCRegister& f13) { return false; }
++bool MCLA_SkipIntroVideos() {
++    if(!MCLAGraphicsSkipIntro())return false;
++    auto* runtime=rex::Runtime::instance();
++    auto* memory=runtime?runtime->memory():nullptr;
++    if(!memory)return false;
++    constexpr uint32_t slot=0x82830B14;
++    auto* slotHeap=memory->LookupHeap(slot);
++    if(!slotHeap || slotHeap->QueryRangeAccess(slot,slot+3)==rex::memory::PageAccess::kNoAccess)return false;
++    const auto* p=memory->TranslateVirtual<const uint8_t*>(slot);
++    const uint32_t object=(uint32_t(p[0])<<24)|(uint32_t(p[1])<<16)|(uint32_t(p[2])<<8)|p[3];
++    if(object<0x1000 || object>UINT32_MAX-15)return false;
++    auto* heap=memory->LookupHeap(object);
++    if(!heap || heap->QueryRangeAccess(object,object+15)!=rex::memory::PageAccess::kReadWrite)return false;
++    const bool skipped=mcla::native::RequestInitializedIntroSkip(
++        {memory->TranslateVirtual<uint8_t*>(object),16});
++    if(skipped)REXLOG_INFO("MCLA intro video skipped after movie/context initialization; natural skip requested");
++    return skipped;
++}
++void MCLA_SkipIntroRenderPassMask(PPCRegister& r4) {
++    // Match normal startup's mask; bit 24 has no initialized stage when movies
++    // are skipped. Leaving the null-legals -1 mask corrupts scene rendering.
++    if (MCLAGraphicsSkipIntro()) r4.u32 = 0xFEFFFFFFu;
++}
 +bool Patch_AspectRatio_82233EB4(PPCRegister& f0) { return MCLADeviceAspect(f0, 1u); }
 +bool Patch_AspectRatio_82214BB8(PPCRegister& f10) { return MCLADeviceAspect(f10, 2u); }
 +bool Patch_AspectRatio_822E5E68(PPCRegister& f12) { return MCLADeviceAspect(f12, 4u); }
 +bool Patch_AspectRatio_8223E5E0(PPCRegister& f13) { return MCLADeviceAspect(f13, 8u); }
  void Patch_SingleTile(PPCRegister& r7, PPCRegister& r8, PPCRegister& r25, PPCRegister& r28) {}
- bool Patch_EdramLimit(PPCRegister& r11) { return false; }
- bool Patch_DebugCamGate() { return false; }
- void Patch_DebugCam(PPCRegister& r3) {}
+@@ -4191,4 +4260,11 @@ void Patch_DebugCam(PPCRegister& r3) {}
  bool MCLA_UI_SkipMissingLights(PPCRegister& r3) { return false; }
 -bool Patch_60FPS_Byte(PPCRegister& r11) { return false; }
 -bool Patch_DisableMotionBlur(PPCRegister& r3) { return false; }
@@ -81,8 +108,7 @@ index 5283518..be69dfa 100644
 +    return true;
 +}
  bool Patch_DisableMSAA(PPCRegister& r11) { return false; }
- bool Patch_PhysicsCollision() { return false; }
- bool Patch_DisableRubberBanding() { return false; }
+@@ -4197,4 +4273,17 @@ bool Patch_DisableRubberBanding() { return false; }
  bool Patch_DisableDoF() { return false; }
 -void Patch_DofComposite(PPCRegister& r3) {}
 +void Patch_DofComposite(PPCRegister& r3) {
@@ -101,11 +127,7 @@ index 5283518..be69dfa 100644
  void Patch_ScaleTrafficLOD(PPCRegister& f0) {}
 +void Patch_ArchiveList(PPCRegister& r1) {}
  void Patch_RideHeightFit(PPCRegister& f30) {}
- bool Patch_WheelFitBypass() { return false; }
- bool Patch_SpeedUnits(PPCRegister& r11) { return false; }
-@@ -4207,7 +4267,19 @@ void Hook_SwfContextEnter(PPCRegister& r3) {}
- void UpdateCityLODMemory() {}
- void Patch_ScaleCityLOD(PPCRegister& f13) {}
+@@ -4209,3 +4298,15 @@ void Patch_ScaleCityLOD(PPCRegister& f13) {}
  bool OpenRexGraphicsFromGameOptions_826686D4(PPCRegister& r3) { return false; }
 -void Patch_FOVScale(PPCRegister& f1, PPCRegister& r24) {}
 +void Patch_FOVScale(PPCRegister& f1, PPCRegister& r24) {
@@ -122,11 +144,7 @@ index 5283518..be69dfa 100644
 +             (180.0 / 3.14159265358979323846);
 +}
  void Patch_DeltaTimePre() {}
- void Patch_DeltaTime(PPCRegister& r24) {}
- void Patch_BypassVehicleDLC(PPCRegister& r30) {}
-@@ -4216,9 +4288,17 @@ bool Patch_ImpostorShadowGuard(PPCRegister& r3) { return false; }
- void Hook_CaptureDistrict(PPCRegister& r3) {}
- void Hook_LzxDecompressPre(PPCRegister& r1) {}
+@@ -4218,5 +4319,13 @@ void Hook_LzxDecompressPre(PPCRegister& r1) {}
  void Hook_LzxDecompressPost(PPCRegister& r1, PPCRegister& r3) {}
 -void MCLACameraPosSmoothing(PPCRegister& f13) {}
 -void MCLACameraLookAtSmoothing(PPCRegister& f0) {}
@@ -143,11 +161,7 @@ index 5283518..be69dfa 100644
 +        f0.f64=mc::ChassisSmoothing(f0.f64,MCLAReadTimingFloat(0x827D7508));
 +}
  void MCLAAmbientDensityTuning(PPCRegister& r3) {}
- bool Patch_DisableImposterShadows(PPCRegister& r11) { return false; }
- void MCLA_TrafficChassisBound_8232D048(PPCRegister& r9, PPCRegister& r11) {}
-@@ -4226,8 +4306,18 @@ void MCLA_TrafficChassisBound_8232D900(PPCRegister& r3, PPCRegister& r11) {}
- void MCLA_TrafficChassisBound_8232E274(PPCRegister& r3, PPCRegister& r31) {}
- bool MCLA_TrafficBoundRelease_8259AA40(PPCRegister& r30) { return false; }
+@@ -4228,6 +4337,16 @@ bool MCLA_TrafficBoundRelease_8259AA40(PPCRegister& r30) { return false; }
  void MCLA_TuneFieldProbe(PPCRegister& r3, PPCRegister& r4, PPCRegister& r5, PPCRegister& r6) {}
 -void MCLAFrameDelta(PPCRegister& r8) {}
 +// iOS also needs the desktop hitch guard. Native presentation owns pacing;
@@ -172,9 +186,9 @@ index e8d75de..b995b2b 100644
 --- a/src/mc_engine/map_mouse.cpp
 +++ b/src/mc_engine/map_mouse.cpp
 @@ -879,6 +879,8 @@ bool MCLA_MapCursorSweepNullGuard(PPCRegister& r31, PPCRegister& r30,
- 
+
  #else  // REXGLUE_HAS_XEO3_TARGET
- 
+
 +#include <rex/ppc/context.h>
 +
  void InitMapMouse() {}
@@ -220,3 +234,31 @@ index 0000000..143d650
 +    return 1.0 - std::pow(0.90, dt * 30.0);
 +}
 +}
+diff --git a/larecomp_config.toml b/larecomp_config.toml
+index 8981502..c9970a5 100644
+--- a/larecomp_config.toml
++++ b/larecomp_config.toml
+@@ -24940,2 +24940,9 @@ jump_address_on_true = 0x822C2F7C
+
++# Apple: preserve the legals/SWF constructor and context, then skip only the
++# startup video's play call. The hook requests the game's natural SWF skip.
++[[midasm_hook]]
++address = 0x822C2F48
++name = "MCLA_SkipIntroVideos"
++jump_address_on_true = 0x822C2F7C
++
+ # 0x821315E4: `bl sub_822E5B00` in sub_82131508, reached with r4 = -1 when there is
+diff --git a/larecomp_config_xeo3.toml b/larecomp_config_xeo3.toml
+index 05dbd44..b84740a 100644
+--- a/larecomp_config_xeo3.toml
++++ b/larecomp_config_xeo3.toml
+@@ -24940,2 +24940,9 @@ jump_address_on_true = 0x822C2F7C
+
++# Apple: preserve the legals/SWF constructor and context, then skip only the
++# startup video's play call. The hook requests the game's natural SWF skip.
++[[midasm_hook]]
++address = 0x822C2F48
++name = "MCLA_SkipIntroVideos"
++jump_address_on_true = 0x822C2F7C
++
+ # 0x821315E4: `bl sub_822E5B00` in sub_82131508, reached with r4 = -1 when there is

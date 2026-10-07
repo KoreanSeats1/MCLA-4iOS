@@ -96,3 +96,7 @@ Collected 2026-10-05 from public GitHub contributor lists. Full license texts ar
 ## Additional library authors
 
 The preserved license texts identify the authors and copyright holders of bundled dependencies, including FFmpeg, fmt, spdlog, xxHash, the AMD FidelityFX FSR contributors, SMAA, and the other libraries used by the upstream SDK. Dependencies may include additional contributor history beyond the primary project catalog. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for source links and scope.
+
+## App icon
+
+App icon provided by **Ricioly**.

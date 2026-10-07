@@ -1,4 +1,4 @@
-# Developer guide — 1.0
+# Developer guide — 1.0.1
 
 ## Layout and exact dependency revisions
 
@@ -89,7 +89,7 @@ Highest priorities: recover the missing programs, expand validation of corrected
 The CMake project version controls the marketing version; the tracked build number is separate. Regenerate the Xcode project before building after changing either. Keep installed app signing intact and stage a copy for recipient re-signing:
 
 ```sh
-python3 tools/package_beta.py --version 1.0 --output releases/1.0
+python3 tools/package_beta.py --version 1.0.1 --output releases/1.0.1
 ```
 
 The packager verifies the device app and ARM64 architecture, checks the expected 603-library inventory, excludes original-game/private-signing files, adds licenses/notices, ad-hoc signs the staged copy, tests ZIP integrity and writes SHA-256 sums plus a source-commit manifest. It does not export an App Store archive or grant recipients a provisioning profile. Versioned release notes and validation live under `docs/releases/`.

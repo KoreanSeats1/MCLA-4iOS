@@ -1,13 +1,22 @@
 <p align="center"><img src="docs/images/app-icon.png" width="160" alt="MCLA 4iOS app icon"></p>
 <h1 align="center">MCLA 4iOS</h1>
-<p align="center">Midnight Club: Los Angeles — Complete Edition on iPhone and iPad<br><strong>Version 1.0</strong></p>
-<p align="center"><a href="https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0">Download IPA</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="docs/FEATURES.md">UI and feature guide</a> · <a href="docs/KNOWN_BUGS.md">Known issues</a> · <a href="https://youtu.be/zmHd-WfsaX4">Gameplay video</a></p>
+<p align="center"><strong><a href="https://youtu.be/zmHd-WfsaX4">▶ Watch my MCLA gameplay on YouTube</a></strong></p>
+<p align="center">Midnight Club: Los Angeles — Complete Edition on iPhone and iPad<br><strong>Version 1.0.1</strong></p>
+<p align="center"><a href="https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.1">Download IPA</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="docs/FEATURES.md">UI and feature guide</a> · <a href="docs/KNOWN_BUGS.md">Known issues</a></p>
 
 An unofficial iOS adaptation built on LARecomp, ReXGlue and the Theft4 Apple foundation. The app combines ahead-of-time ARM64 execution with a title-specific native Metal renderer, a custom UIKit launcher, editable touch controls, tilt steering and physical controllers.
 
-**No original game files are included. You need your own extracted Xbox 360 Complete Edition copy.** Version 1.0 is a release milestone; the [known issues](docs/KNOWN_BUGS.md) still apply.
+**No original game files are included. You need your own extracted Xbox 360 Complete Edition copy.** Version 1.0.1 is a release milestone; the [known issues](docs/KNOWN_BUGS.md) still apply.
 
-## What's new in 1.0
+## What's new in 1.0.1
+
+- New app icon provided by **Ricioly**.
+- Minimap borders and GPS decorations follow the map through rotation.
+- Hold a control and pinch anywhere to resize it, with a wider size range.
+- Skip Intro Videos defaults on and preserves startup initialization; title-logo visual acceptance remains pending.
+- Reduced CPU preparation through equivalent geometry reuse, shader-consumed vertex streams and contiguous constant snapshots. Sustained warm-device FPS improvement remains unverified.
+
+The redesigned controls and graphics corrections from 1.0 remain included:
 
 - Redesigned cyan touch artwork: circular utility controls, a split gas/drift pedal, a separate steering base and knob, and distinct pressed/disabled states.
 - Continuous thumb slides between Gas, Gas + Handbrake and Brake. The middle of the drift/brake connection holds all three driving inputs together.
@@ -35,7 +44,7 @@ Playable performance is expected on iPhone 15 Pro or newer, but devices outside 
 
 ### 1. Install the IPA
 
-1. Download **MCLA-4iOS-1.0.ipa** from the [1.0 release assets](https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0).
+1. Download **MCLA-4iOS-1.0.1.ipa** from the [1.0.1 release assets](https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.1).
 2. Re-sign and install with [Sideloadly](https://sideloadly.io/) or [AltStore Classic](https://faq.altstore.io/altstore-classic/how-to-install-altstore-macos), using your own Apple account.
 3. Follow the installer's trust and Developer Mode instructions if required.
 4. Open MCLA once so it creates its game-data folder, then close it before transferring the game.
@@ -89,7 +98,7 @@ Cyan bridges show the driving connections; a plus marks the three-input drift/br
 
 ### Layout editing
 
-Use **EDIT** during gameplay to drag controls and pinch to resize. Double-tap a palette item to add it; double-tap a deployed optional item to return it to the palette. Choose **DONE** to drive. Changes save automatically. **Driving Controls → Reset touch layout** restores the default for the selected layout.
+Use **EDIT** during gameplay to drag controls, or hold a control and pinch anywhere to resize. Double-tap a palette item to add it; double-tap a deployed optional item to return it to the palette. Choose **DONE** to drive. Changes save automatically. **Driving Controls → Reset touch layout** restores the default for the selected layout.
 
 The redesigned arrangement is enabled by default, including Pause, Camera, Nitro, Ability, map/GPS actions, Lights, Weight, Horn and track controls. Existing saved edits take precedence. The **Experimental control overhaul** switch retains the earlier arrangement as an alternative; each arrangement keeps its own saved control preferences. **PAD** exposes the complete virtual Xbox controller for menus and less common actions.
 
@@ -138,11 +147,14 @@ Outstanding reports include two missing shader programs, road shimmer, checkpoin
 - [Technical architecture and optimization](docs/TECHNICAL_NOTES.md)
 - [Developer/build guide](docs/DEVELOPMENT.md)
 - [Control-overhaul implementation notes](docs/CONTROL_OVERHAUL.md)
+- [1.0.1 release notes](docs/releases/1.0.1.md) and [validation](docs/releases/1.0.1-validation.md)
 - [1.0 release notes](docs/releases/1.0.md) and [validation](docs/releases/1.0-validation.md)
 
 Clone recursively and apply the tracked patches against the pinned dependency revisions. The source excludes original game data and generated AOT/shader caches. A fresh source ZIP alone is not a turnkey build; staged user-owned inputs are required. The public IPA includes compiled application code and shader libraries, with notices and SHA-256 checksums.
 
 ## Credits and license
+
+App icon provided by **Ricioly**.
 
 Thanks to **mzzvxm/LARecomp**, **BadassBaboon**, **Graine25**, **Foxxyyy**, **ReXGlue**, **LibertyRecomp/Theft4**, **Xenia/XeniOS**, **XenosRecomp**, **AMD/GPUOpen** and all upstream contributors. **KoreanSeats1** maintains this iOS adaptation. Rockstar San Diego created the original game.
 
