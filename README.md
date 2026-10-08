@@ -1,14 +1,22 @@
 <p align="center"><img src="docs/images/app-icon.png" width="160" alt="MCLA 4iOS app icon"></p>
 <h1 align="center">MCLA 4iOS</h1>
 <p align="center"><strong><a href="https://youtu.be/zmHd-WfsaX4">▶ Watch my MCLA gameplay on YouTube</a></strong></p>
-<p align="center">Midnight Club: Los Angeles — Complete Edition on iPhone and iPad<br><strong>Version 1.0.1</strong></p>
-<p align="center"><a href="https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.1">Download IPA</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="docs/FEATURES.md">UI and feature guide</a> · <a href="docs/KNOWN_BUGS.md">Known issues</a></p>
+<p align="center">Midnight Club: Los Angeles — Complete Edition on iPhone and iPad<br><strong>Version 1.0.2</strong></p>
+<p align="center"><a href="https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.2">Download IPA and Mac applet</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="docs/FEATURES.md">UI and feature guide</a> · <a href="docs/KNOWN_BUGS.md">Known issues</a></p>
 
 An unofficial iOS adaptation built on LARecomp, ReXGlue and the Theft4 Apple foundation. The app combines ahead-of-time ARM64 execution with a title-specific native Metal renderer, a custom UIKit launcher, editable touch controls, tilt steering and physical controllers.
 
-**No original game files are included. You need your own extracted Xbox 360 Complete Edition copy.** Version 1.0.1 is a release milestone; the [known issues](docs/KNOWN_BUGS.md) still apply.
+**No original game files are included. You need your own extracted Xbox 360 Complete Edition copy.** Version 1.0.2 is a release milestone; the [known issues](docs/KNOWN_BUGS.md) still apply.
 
-## What's new in 1.0.1
+## What's new in 1.0.2
+
+- **MCLA Game Prep for Mac:** drag an Xbox 360 ISO, RAR, ZIP, 7z or extracted game folder into a standalone app and prepare the complete `MCLA_Game_Files` layout.
+- Exact compatibility checking now accepts the verified alternate Complete Edition executable whose game code matches our baseline. No title update needed.
+- Clear platform errors, safe staging/cancellation, complete extraction, lowercase paths and a preparation report.
+- Mac applet download, related icon and [step-by-step preparation guide](docs/GAME_PREP.md). **Windows coming soon.**
+- The alternate copy passed extraction and static compatibility checks; physical-device gameplay with it remains untested.
+
+See [1.0.2 release notes](docs/releases/1.0.2.md). The 1.0.1 improvements remain included:
 
 - New app icon provided by **Ricioly**.
 - Minimap borders and GPS decorations follow the map through rotation.
@@ -44,14 +52,16 @@ Playable performance is expected on iPhone 15 Pro or newer, but devices outside 
 
 ### 1. Install the IPA
 
-1. Download **MCLA-4iOS-1.0.1.ipa** from the [1.0.1 release assets](https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.1).
+1. Download **MCLA-4iOS-1.0.2.ipa** from the [1.0.2 release assets](https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.2).
 2. Re-sign and install with [Sideloadly](https://sideloadly.io/) or [AltStore Classic](https://faq.altstore.io/altstore-classic/how-to-install-altstore-macos), using your own Apple account.
 3. Follow the installer's trust and Developer Mode instructions if required.
 4. Open MCLA once so it creates its game-data folder, then close it before transferring the game.
 
 The public IPA is ad-hoc signed for recipient re-signing. It has no personal provisioning profile. The source ZIP, manifest and checksum file are supporting downloads, not app installers. See the [full installation guide](docs/INSTALLATION.md) for signing, updates and troubleshooting.
 
-### 2. Transfer the complete extraction
+### 2. Prepare and transfer the complete extraction
+
+On a Mac, download **MCLA-Game-Prep-1.0.2-macOS.zip** from the same release, unzip it and open **MCLA Game Prep.app**. Drag your Xbox 360 Complete Edition ISO, RAR/ZIP/7z of extracted files, or extracted folder onto **Drop your game here**, then click **Prepare Game Folder**. The finished folder appears beside your input. See the [Game Prep guide](docs/GAME_PREP.md) for compatibility, title updates and troubleshooting. **Windows coming soon.**
 
 Destination on the device:
 
@@ -147,6 +157,8 @@ Outstanding reports include two missing shader programs, road shimmer, checkpoin
 - [Technical architecture and optimization](docs/TECHNICAL_NOTES.md)
 - [Developer/build guide](docs/DEVELOPMENT.md)
 - [Control-overhaul implementation notes](docs/CONTROL_OVERHAUL.md)
+- [Game Prep guide](docs/GAME_PREP.md)
+- [1.0.2 release notes](docs/releases/1.0.2.md) and [validation](docs/releases/1.0.2-validation.md)
 - [1.0.1 release notes](docs/releases/1.0.1.md) and [validation](docs/releases/1.0.1-validation.md)
 - [1.0 release notes](docs/releases/1.0.md) and [validation](docs/releases/1.0-validation.md)
 

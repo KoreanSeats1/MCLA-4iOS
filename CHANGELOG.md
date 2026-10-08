@@ -2,6 +2,20 @@
 
 Release entries describe shipped behavior and validation separately. Version numbers do not imply that every original-game effect, device or race has been verified.
 
+## 1.0.2 — 2026-10-08
+
+Game preparation and compatibility update. Marketing version 1.0.2, build 4, tag `v1.0.2`.
+
+- Ship a standalone macOS 13+ preparation app for Apple silicon and Intel, with a related icon and a clear Xbox 360 Complete Edition expectation on the main screen. **Windows coming soon.**
+- Add visible drag-and-drop and click-to-choose input for ISO, RAR, ZIP, 7z and extracted game folders. Select one neighboring ISO automatically without blocking window startup on directory-access delays.
+- Extract XDVDFS game-partition/full raw-disc images directly; unpack archives with system libarchive or copy extracted folders. Produce all game files with lowercase paths, a preparation report and Finder reveal.
+- Preserve existing outputs; stage work, support cancellation, clean up failed extraction and reject unsafe paths, links, duplicates, malformed directories and truncated payloads. Add a specific PS3 ISO diagnosis.
+- Accept the exact alternate `0F1CB201` executable fingerprint: its full program payload and loading configuration match the compiled iOS baseline despite header/version metadata differences. Update the shared manifest and shell validator.
+- Require no title update for the supported copies and reject unverified executable update patches.
+- Add reproducible synthetic archive fixtures, extraction/input regressions, detailed usage/transfer documentation and the Mac download alongside the new release IPA.
+- Complete a real RAR preparation through the native UI and verify all 12 output files against independent extraction. Audit the alternate cache's 22,068 file entries and directory layout. Physical-device gameplay with the alternate copy remains untested.
+- Retain 1.0.1 gameplay, graphics and performance behavior; no additional FPS improvement is claimed. See [full release notes](docs/releases/1.0.2.md) and [Game Prep guide](docs/GAME_PREP.md).
+
 ## 1.0.1 — 2026-10-07
 
 Bugfix and CPU performance update. Marketing version 1.0.1, build 3, tag `v1.0.1`.

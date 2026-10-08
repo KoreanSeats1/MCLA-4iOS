@@ -1,5 +1,5 @@
 {
-  "title": "Midnight Club: Los Angeles — Complete Edition",
+  "title": "Midnight Club: Los Angeles \u2014 Complete Edition",
   "platform": "Xbox 360",
   "titleId": "TT-2040",
   "mediaId": "5940C9DB",
@@ -11,5 +11,13 @@
     "xarchive_audlo.rpf",
     "xarchive_cache.rpf",
     "xarchive_music.rpf"
+  ],
+  "compatibleExecutables": [
+    {
+      "mediaId": "0F1CB201",
+      "version": "0.0.0.13",
+      "defaultXexSha256": "6e78e00a84beee89aa23f4f3f5ed4ff7cc443e6efe356b50ec6ee8d29a8632c7",
+      "validation": "Program payload, encryption key, compression settings, memory layout, page descriptors, entry point, import libraries and import record addresses match the recorded baseline. Header-only regional/version differences. Gameplay validation pending."
+    }
   ]
 }

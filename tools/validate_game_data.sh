@@ -26,12 +26,17 @@ if [ "$missing" -ne 0 ]; then
 fi
 
 actual_hash=$(shasum -a 256 "$game_root/default.xex" | awk '{print $1}')
-expected_hash=c386f4001fa569e6ad4b982f441f67412f00b3f47c166134555cd4b59854a432
-
-if [ "$actual_hash" != "$expected_hash" ]; then
-    echo "warning: default.xex differs from the recorded bring-up baseline" >&2
-    echo "actual:   $actual_hash" >&2
-    echo "expected: $expected_hash" >&2
+case "$actual_hash" in
+    c386f4001fa569e6ad4b982f441f67412f00b3f47c166134555cd4b59854a432|6e78e00a84beee89aa23f4f3f5ed4ff7cc443e6efe356b50ec6ee8d29a8632c7)
+        ;;
+    *)
+        echo "default.xex has not been verified for this iOS build." >&2
+        echo "actual: $actual_hash" >&2
+        exit 3
+        ;;
+esac
+if [ -f "$game_root/default.xexp" ]; then
+    echo "Unverified title-update patch found. Use original disc files." >&2
     exit 3
 fi
 

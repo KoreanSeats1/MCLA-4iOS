@@ -9,7 +9,7 @@
 Use the official [Sideloadly website](https://sideloadly.io/) and [FAQ](https://sideloadly.io/faq.html). Avoid repackaged downloads that request unrelated configuration profiles.
 
 1. Download Sideloadly from its official website and install its current macOS/Windows prerequisites. On Windows, follow Sideloadly's own Apple driver/iTunes/iCloud requirements; the Apple Devices file-transfer instructions below are a separate step.
-2. Download **MCLA-4iOS-1.0.ipa** from the release's **Assets** list. Keep it as an IPA. The source ZIP, checksum file and JSON manifest are not the app installer.
+2. Download **MCLA-4iOS-1.0.2.ipa** from the release's **Assets** list. Keep it as an IPA. The source ZIP, checksum file and JSON manifest are not the app installer.
 3. Connect your iPhone/iPad by USB, unlock it and accept **Trust This Computer** if prompted. Confirm the device appears in Sideloadly.
 4. Select that device in Sideloadly. Drag the IPA onto its IPA area, or use the IPA selector to choose it.
 5. Use the normal Apple-ID signing workflow, enter your Apple account and start installation. Complete any authentication prompts in the tool. Keep the same account and bundle identifier for future updates.
@@ -30,6 +30,10 @@ After AltStore Classic and AltServer are configured, download the IPA to Files, 
 These are documented signing routes, not evidence that every signing-tool version has been tested against this beta. Report installation failures with the tool/version and the actual error.
 
 ### Prepare the game files on your computer
+
+**Mac:** [MCLA Game Prep](GAME_PREP.md) prepares your Xbox 360 Complete Edition ISO, RAR/ZIP/7z containing extracted files, or existing game folder. Download the Mac ZIP from the release, open the app, drag one input into the cyan area and click **Prepare Game Folder**. Copy its completed `MCLA_Game_Files` output using the routes below. No title update is required for the supported copies. **Windows coming soon.** The companion requires macOS 13+ and supports Apple silicon and Intel.
+
+The instructions below also apply when preparing the folder manually.
 
 You need your own **extracted Xbox 360 Complete Edition** copy. The app does not download the game or extract an ISO. A `.iso`, `.zip`, `.7z` or PS3 folder cannot be launched directly. A ZIP can be used for transport only; it must be unpacked before play.
 
