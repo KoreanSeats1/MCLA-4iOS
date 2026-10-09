@@ -58,6 +58,32 @@ Playable performance is expected on iPhone 15 Pro or newer, but devices outside 
 
 ## Installation and game data
 
+### Copy-and-paste setup prompt
+
+Copy the entire block below into Codex or Claude to get help with your setup. An agent with computer/file access can carry out the steps its tools support; a chat-only agent can guide you. You supply your own game copy and complete device trust/signing prompts. Successful gameplay must be verified on your device.
+
+```text
+Help me install and launch MCLA 4iOS (Midnight Club: Los Angeles — Complete Edition) on my iPhone or iPad. Work through the setup with me until we verify that the game launches, or identify the exact remaining blocker.
+
+Start by reading the project's current instructions and latest published release:
+https://github.com/KoreanSeats1/MCLA-4iOS
+https://github.com/KoreanSeats1/MCLA-4iOS/blob/main/docs/INSTALLATION.md
+https://github.com/KoreanSeats1/MCLA-4iOS/blob/main/docs/GAME_PREP.md
+https://github.com/KoreanSeats1/MCLA-4iOS/releases/latest
+
+Ask only for missing details, preferably together: my device model and iOS version; whether I have a Mac, Windows PC, or only the phone; where my own Xbox 360 Complete Edition game files are and whether they are an ISO, archive, or extracted folder; whether MCLA is already installed; and my signing method (such as Sideloadly, AltStore Classic, or SideStore). If I use LiveContainer, establish that explicitly because its file locations can differ. Inspect accessible files and connected devices instead of asking me to repeat information you can verify.
+
+Use your available tools to perform the computer-side setup, download the latest published IPA and check its supplied checksum, prepare my game files, and assist with installation and transfer. Guide me through steps you cannot operate, including phone-only actions and entering credentials directly in the official signing tool. Never ask me to paste passwords or authentication codes into chat. Preserve existing saves, game files, signing identity, and bundle identifier; ask before deleting or replacing existing data. A source ZIP is not the IPA, and the public IPA needs signing for my device.
+
+On Mac, use the project's released MCLA Game Prep app for my own Xbox 360 Complete Edition input. Locate the companion asset through the Game Prep guide: it may be in an earlier release than the IPA. On Windows or phone-only setups, follow the documented options for my actual input; explain any extraction step that requires a computer instead of promising the Mac prep tool works on Windows. Use the entire verified extraction, including every file and subfolder. Keep my original input. The supported copies need no title update; do not apply an arbitrary update or use PS3 files.
+
+Open MCLA once, close it, then transfer the complete extraction into Files > On My iPhone/iPad > MCLA > MCLA_Game_Files. default.xex and xarchive_*.rpf must be directly inside that folder, with all remaining content beside them. Avoid an extra Documents folder, duplicate MCLA_Game_Files, or unopened archive. Wait for copying to finish and verify the layout. READY TO DRIVE confirms basic detection, not the integrity of the whole game.
+
+Start with 30 FPS, 720p, and FSR off. Help me launch in landscape and confirm the game reaches its menu and gameplay; do not report success based only on installation or READY TO DRIVE. iOS/iPadOS 18 or newer is required, and performance depends on the device.
+
+If launch fails, record the exact message. Use MCLA 1.0.4 or newer for the Metal deployment-target hotfix. For diagnosis, turn Graphics > Retail Mode OFF, fully close and reopen MCLA, reproduce the failure, then tap Export Logs and inspect the ZIP I provide. Trace the specific underlying error instead of assuming my archive or signing method is responsible. Finish with the verified result and any remaining action I must take.
+```
+
 ### 1. Install the IPA
 
 1. Download **MCLA-4iOS-1.0.4.ipa** from the [1.0.4 release assets](https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.4).

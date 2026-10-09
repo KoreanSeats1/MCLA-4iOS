@@ -27,7 +27,7 @@ The Mac app is ad-hoc signed, not Developer ID signed or notarized. macOS may re
 
 ## Install the IPA and transfer the result
 
-1. Download **MCLA-4iOS-1.0.2.ipa** from the same release. Re-sign and install it with your own Apple account using your sideloading tool. iOS/iPadOS 18.0 or newer is required. The public IPA contains no personal provisioning profile.
+1. Download the latest **MCLA-4iOS-<version>.ipa** from the [latest published release](https://github.com/KoreanSeats1/MCLA-4iOS/releases/latest). Use **1.0.4 or newer** for the Metal startup hotfix; the Mac preparation download remains in 1.0.2. Re-sign and install it with your own Apple account using your sideloading tool. iOS/iPadOS 18.0 or newer is required. The public IPA contains no personal provisioning profile.
 2. Open MCLA once so it creates its game-data location, then close it.
 3. On a Mac, connect and unlock the device, open **Finder → device → Files → MCLA**, and drag in the complete `MCLA_Game_Files` folder. You can also use the device's Files app to place it here:
 
