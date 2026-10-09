@@ -2,6 +2,16 @@
 
 Release entries describe shipped behavior and validation separately. Version numbers do not imply that every original-game effect, device or race has been verified.
 
+## 1.0.3 — 2026-10-09
+
+Diagnostic export update. Marketing version 1.0.3, build 5, tag `v1.0.3`.
+
+- Add a launcher **Export Logs** button and standard ZIP sharing through Files, AirDrop and other iOS share destinations.
+- Include existing runtime logs/status, performance diagnostics and a current app/device/settings/failure report without game files, saves or caches.
+- Restore launcher controls after startup failure; keep a small runtime status file with Retail Mode on. Detailed logs remain opt-in through Retail Mode off.
+- Validate the actual exporter against synthetic nested/Unicode and multi-chunk files, ZIP integrity, empty diagnostics, symlink/game/save exclusion and output errors.
+- See [release notes](docs/releases/1.0.3.md) and [validation](docs/releases/1.0.3-validation.md). Physical-device export and the reported AOT failure remain unverified.
+
 ## 1.0.2 — 2026-10-08
 
 Game preparation and compatibility update. Marketing version 1.0.2, build 4, tag `v1.0.2`.

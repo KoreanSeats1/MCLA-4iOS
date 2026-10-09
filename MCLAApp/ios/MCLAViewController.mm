@@ -4,6 +4,8 @@
 #import "MCLAMetalView.h"
 #import "MCLALauncherView.h"
 #import "MCLASaveArchive.h"
+#import "MCLALogArchive.h"
+#include <sys/utsname.h>
 #import "MCLAGraphicsFoundation.h"
 #import "MCLAHostBridge.h"
 #import "MCLABootstrapSubsystems.h"
@@ -846,6 +848,7 @@ static void MCLARegisterGraphicsDefaults(void) {
 @property(nonatomic, assign) BOOL toolbarVisible;
 @property(nonatomic, assign) BOOL gameVisible;
 @property(nonatomic, assign) BOOL launchRequested;
+@property(nonatomic, assign) BOOL exportingLogs;
 @property(nonatomic, assign) BOOL runtimeStartPending;
 @property(nonatomic, assign) BOOL sceneReleased;
 @property(nonatomic, assign) BOOL controllerConfirmDown;
@@ -1027,6 +1030,9 @@ static void MCLARegisterGraphicsDefaults(void) {
     self.savesButton = panel.savesButton;
     [self.savesButton addTarget:self action:@selector(showSaveOptions:)
               forControlEvents:UIControlEventTouchUpInside];
+
+    [panel.logsButton addTarget:self action:@selector(exportLogs:)
+        forControlEvents:UIControlEventTouchUpInside];
 
     UILayoutGuide* safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
@@ -2011,6 +2017,8 @@ static void MCLARegisterGraphicsDefaults(void) {
         UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
 
     if (runtime.failed) {
+        self.launchRequested = NO;
+        self.runtimeStartPending = NO;
         self.statusLabel.text = @"LAUNCH STOPPED";
         self.statusLabel.textColor = UIColor.systemRedColor;
     } else if (runtime.entryReached) {
@@ -2032,7 +2040,7 @@ static void MCLARegisterGraphicsDefaults(void) {
 
     self.panel.launchReady = report.ready && runtime.available &&
                                 !runtime.running && !runtime.finished && !self.launchRequested;
-    [self.panel setLaunching:runtime.running || self.launchRequested];
+    [self.panel setLaunching:(runtime.running && !runtime.failed) || self.launchRequested];
     // Once the title itself is driving Metal frames, reveal the full render
     // surface. The telemetry remains available in the persistent runtime log.
     const BOOL gameVisible = runtime.entryReached && graphics.titleDrivenFrames > 0 &&
@@ -2130,7 +2138,7 @@ static void MCLARegisterGraphicsDefaults(void) {
 
 - (void)launchMCLA:(id)sender {
     (void)sender;
-    if (self.launchRequested) return;
+    if (self.launchRequested || self.exportingLogs) return;
     MCLARuntimeReport runtime = {}; MCLAHostGetRuntimeReport(&runtime);
     if (runtime.running || runtime.finished) return;
     self.launchError = nil;
@@ -2425,6 +2433,59 @@ static void MCLARegisterGraphicsDefaults(void) {
     navigation.modalPresentationStyle = UIModalPresentationFormSheet;
     navigation.preferredContentSize = CGSizeMake(570, 550);
     [self presentViewController:navigation animated:YES completion:nil];
+}
+
+- (void)exportLogs:(UIButton*)sender {
+    MCLARuntimeReport runtime = {}; MCLAHostGetRuntimeReport(&runtime);
+    if (self.exportingLogs || self.gameVisible || (runtime.running && !runtime.failed) || self.presentedViewController) return;
+    self.exportingLogs = YES;
+    sender.enabled = NO;
+    UIButtonConfiguration* busy = sender.configuration;
+    busy.showsActivityIndicator = YES; sender.configuration = busy;
+    struct utsname hardware = {}; uname(&hardware);
+    NSDictionary* info = NSBundle.mainBundle.infoDictionary;
+    NSMutableDictionary* settings = [NSMutableDictionary dictionary];
+    for (NSString* key in @[@"MCLARetailMode", @"MCLARenderHeight", @"MCLAFSREnabled",
+        @"MCLAFilterMode", @"MCLABloomMode", @"MCLASkipIntro", @"MCLAExperimental60FPS"])
+        settings[key] = [NSUserDefaults.standardUserDefaults objectForKey:key] ?: @"unset";
+    NSString* report = [NSString stringWithFormat:
+        @"MCLA diagnostic export\nDate: %@\nVersion: %@ (%@)\nDevice: %s\niOS: %@\n"
+         "Runtime: %s\nFailed: %d  Finished: %d  Entry reached: %d\nLaunch error: %@\nSettings: %@\n\n"
+         "Includes existing runtime logs and diagnostic text captures.\n"
+         "For detailed startup logs, turn Graphics > Retail Mode off, reopen MCLA and reproduce the issue.\n",
+        NSDate.date, info[@"CFBundleShortVersionString"], info[@"CFBundleVersion"],
+        hardware.machine, UIDevice.currentDevice.systemVersion, runtime.detail,
+        runtime.failed, runtime.finished, runtime.entryReached, self.launchError ?: @"none", settings];
+    NSURL* home = [NSURL fileURLWithPath:NSHomeDirectory() isDirectory:YES];
+    NSURL* archive = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
+        URLByAppendingPathComponent:[NSString stringWithFormat:@"MCLA-Logs-%@.zip", NSUUID.UUID.UUIDString]];
+    __weak MCLAViewController* weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSError* error = nil;
+        BOOL succeeded = [MCLALogArchive exportHome:home report:report toURL:archive error:&error];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            MCLAViewController* owner = weakSelf;
+            owner.exportingLogs = NO;
+            sender.enabled = YES;
+            UIButtonConfiguration* idle = sender.configuration;
+            idle.showsActivityIndicator = NO; sender.configuration = idle;
+            if (!owner || owner.gameVisible || owner.presentedViewController) {
+                [NSFileManager.defaultManager removeItemAtURL:archive error:nil]; return;
+            }
+            if (!succeeded) {
+                [owner showSaveMessage:@"Log export failed" detail:error.localizedDescription]; return;
+            }
+            UIActivityViewController* share = [[UIActivityViewController alloc]
+                initWithActivityItems:@[archive] applicationActivities:nil];
+            share.popoverPresentationController.sourceView = sender;
+            share.popoverPresentationController.sourceRect = sender.bounds;
+            share.completionWithItemsHandler = ^(UIActivityType type, BOOL completed, NSArray* items, NSError* issue) {
+                (void)type; (void)completed; (void)items; (void)issue;
+                [NSFileManager.defaultManager removeItemAtURL:archive error:nil];
+            };
+            [owner presentViewController:share animated:YES completion:nil];
+        });
+    });
 }
 
 - (void)exportSaves {

@@ -1,12 +1,16 @@
 <p align="center"><img src="docs/images/app-icon.png" width="160" alt="MCLA 4iOS app icon"></p>
 <h1 align="center">MCLA 4iOS</h1>
 <p align="center"><strong><a href="https://youtu.be/zmHd-WfsaX4">▶ Watch my MCLA gameplay on YouTube</a></strong></p>
-<p align="center">Midnight Club: Los Angeles — Complete Edition on iPhone and iPad<br><strong>Version 1.0.2</strong></p>
-<p align="center"><a href="https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.2">Download IPA and Mac applet</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="docs/FEATURES.md">UI and feature guide</a> · <a href="docs/KNOWN_BUGS.md">Known issues</a></p>
+<p align="center">Midnight Club: Los Angeles — Complete Edition on iPhone and iPad<br><strong>Version 1.0.3</strong></p>
+<p align="center"><a href="https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.3">Download IPA</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="docs/FEATURES.md">UI and feature guide</a> · <a href="docs/KNOWN_BUGS.md">Known issues</a></p>
 
 An unofficial iOS adaptation built on LARecomp, ReXGlue and the Theft4 Apple foundation. The app combines ahead-of-time ARM64 execution with a title-specific native Metal renderer, a custom UIKit launcher, editable touch controls, tilt steering and physical controllers.
 
-**No original game files are included. You need your own extracted Xbox 360 Complete Edition copy.** Version 1.0.2 is a release milestone; the [known issues](docs/KNOWN_BUGS.md) still apply.
+**No original game files are included. You need your own extracted Xbox 360 Complete Edition copy.** Version 1.0.3 is a release milestone; the [known issues](docs/KNOWN_BUGS.md) still apply.
+
+## What's new in 1.0.3
+
+**Export Logs** on the launcher creates a ZIP of existing runtime and performance diagnostics plus device, version, settings and failure details. It remains available after a failed startup. Save it to Files or share it directly. For detailed startup logs, turn **Graphics → Retail Mode OFF**, close and reopen MCLA, reproduce the error and export. See [1.0.3 release notes](docs/releases/1.0.3.md).
 
 ## What's new in 1.0.2
 
@@ -52,7 +56,7 @@ Playable performance is expected on iPhone 15 Pro or newer, but devices outside 
 
 ### 1. Install the IPA
 
-1. Download **MCLA-4iOS-1.0.2.ipa** from the [1.0.2 release assets](https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.2).
+1. Download **MCLA-4iOS-1.0.3.ipa** from the [1.0.3 release assets](https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.3).
 2. Re-sign and install with [Sideloadly](https://sideloadly.io/) or [AltStore Classic](https://faq.altstore.io/altstore-classic/how-to-install-altstore-macos), using your own Apple account.
 3. Follow the installer's trust and Developer Mode instructions if required.
 4. Open MCLA once so it creates its game-data folder, then close it before transferring the game.
@@ -61,7 +65,7 @@ The public IPA is ad-hoc signed for recipient re-signing. It has no personal pro
 
 ### 2. Prepare and transfer the complete extraction
 
-On a Mac, download **MCLA-Game-Prep-1.0.2-macOS.zip** from the same release, unzip it and open **MCLA Game Prep.app**. Drag your Xbox 360 Complete Edition ISO, RAR/ZIP/7z of extracted files, or extracted folder onto **Drop your game here**, then click **Prepare Game Folder**. The finished folder appears beside your input. See the [Game Prep guide](docs/GAME_PREP.md) for compatibility, title updates and troubleshooting. **Windows coming soon.**
+On a Mac, download **MCLA-Game-Prep-1.0.2-macOS.zip** from the [1.0.2 release](https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.2), unzip it and open **MCLA Game Prep.app**. Drag your Xbox 360 Complete Edition ISO, RAR/ZIP/7z of extracted files, or extracted folder onto **Drop your game here**, then click **Prepare Game Folder**. The finished folder appears beside your input. See the [Game Prep guide](docs/GAME_PREP.md) for compatibility, title updates and troubleshooting. **Windows coming soon.**
 
 Destination on the device:
 

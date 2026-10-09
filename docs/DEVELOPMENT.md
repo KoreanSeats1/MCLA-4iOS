@@ -1,4 +1,4 @@
-# Developer guide — 1.0.2
+# Developer guide — 1.0.3
 
 ## Layout and exact dependency revisions
 
@@ -74,7 +74,7 @@ The re-signable release IPA is packaged from a copy of the verified device app. 
 
 ## Profiling responsibly
 
-Retail Mode gates ordinary diagnostics and captures. Turn it off before launching a deliberate diagnostic run. Double-tap the graph to collect a bounded timing capture; CSV, summary and sparse GPU-pass records are written to `Documents/Diagnostics`. Raw runtime diagnostics live separately in application support. Review files before making them public.
+Retail Mode gates ordinary diagnostics and captures. Turn it off before launching a deliberate diagnostic run. Double-tap the graph to collect a bounded timing capture; CSV, summary and sparse GPU-pass records are written to `Documents/Diagnostics`. Runtime diagnostics live in application support; the launcher’s Export Logs button packages existing text diagnostics and a device/version/failure report into a standard ZIP. The exporter streams file contents, excludes saves/game data/caches and is tested with `python3 tools/test_mcla_log_archive.py`. The small runtime status file remains enabled in Retail Mode. Review exported logs before making them public.
 
 CPU wall time includes waits and descheduling. GPU execution does not include every CPU/queue/presentation delay. Some UI samples are the latest completion, not exact-row pairs. GPU passes/stages may overlap. Thermal state is pressure metadata, not a temperature reading. Keep these distinctions in benchmark reports.
 
@@ -89,8 +89,7 @@ Highest priorities: recover the missing programs, expand validation of corrected
 The CMake project version controls the marketing version; the tracked build number is separate. Regenerate the Xcode project before building after changing either. Keep installed app signing intact and stage a copy for recipient re-signing:
 
 ```sh
-python3 tools/package_beta.py --version 1.0.2 --output releases/1.0.2 \
-  --mac-applet "releases/1.0.2/MCLA Game Prep.app"
+python3 tools/package_beta.py --version 1.0.3 --output releases/1.0.3
 ```
 
 The packager verifies the device app and ARM64 architecture, checks the expected 603-library inventory, excludes original-game/private-signing files, adds licenses/notices, ad-hoc signs the staged copy, tests ZIP integrity and writes SHA-256 sums plus a source-commit manifest. It does not export an App Store archive or grant recipients a provisioning profile. Versioned release notes and validation live under `docs/releases/`.

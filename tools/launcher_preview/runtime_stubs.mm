@@ -6,6 +6,8 @@
 #include "MCLABootstrapSubsystems.h"
 #include <cassert>
 static bool started=false;
+static bool runtimeFailed=false;
+void MCLAControlPreviewSetRuntimeFailed(bool failed) { runtimeFailed=failed; }
 static bool fsr=false, experimental60=false, previewRightTrigger=false;
 static uint32_t experiments=7;
 @implementation MCLAMetalView
@@ -20,13 +22,16 @@ bool MCLAHostStartRuntime(const char*,char*,uint32_t) {
     assert(view.bounds.size.width>view.bounds.size.height && "Runtime must begin in landscape");
     started=true; return true;
 }
-void MCLAHostGetRuntimeReport(MCLARuntimeReport* r) { *r={}; r->available=true; r->running=started; r->entryReached=started; }
+void MCLAHostGetRuntimeReport(MCLARuntimeReport* r) { *r={}; r->available=true; r->running=started; r->entryReached=started; r->failed=runtimeFailed; r->finished=runtimeFailed;
+    if (runtimeFailed) snprintf(r->detail, sizeof(r->detail), "Xbox/AOT runtime setup failed."); }
 void MCLAGraphicsGetReport(MCLAGraphicsReport* r) { *r={}; r->metalPresenterReady=true; r->titleDrivenFrames=started?1:0; }
 void MCLAGraphicsConfigureNativeAspect(uint32_t,uint32_t,bool) {}
 void MCLAGraphicsConfigureOutput(uint32_t,bool enabled) { fsr=enabled; }
 void MCLAGraphicsSetApplicationActive(bool) {}
 void MCLAGraphicsSetMotionBlurDisabled(bool) {}
 void MCLAGraphicsSetDepthOfFieldDisabled(bool) {}
+void MCLAGraphicsSetSkipIntro(bool) {}
+bool MCLAGraphicsPerformanceCaptureActive(void) { return false; }
 void MCLAGraphicsSetExperimental60FPS(bool enabled) { experimental60=enabled; }
 bool MCLAGraphicsExperimental60FPS(void) { return experimental60; }
 void MCLAGraphicsSetFSREnabled(bool enabled) { fsr=enabled; }

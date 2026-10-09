@@ -47,3 +47,7 @@ and output bounded by the chosen headroom. This flag is never enabled in the
 shipping CMake target. A simulator screenshot is SDR and cannot validate
 physical OLED luminance. Neither this nor simulator cadence proves device
 60-fps performance.
+
+## Log export integration
+
+The log-export test uses `log_export_integration.mm` instead of `integration.mm`, with the same integration flag, runtime stubs and production controller. Also link `MCLASaveArchive.mm`, `MCLALogArchive.mm`, UniformTypeIdentifiers and `-lz`; add `-I MCLAApp/runtime`. The stubs provide a synthetic failed runtime. The test checks that failure restores the Export Logs button, creates a ZIP even without detailed diagnostics, and opens the actual iOS share sheet. It prints `MCLA_LOG_EXPORT_UI_TEST PASS` and exits. It does not run the game or confirm a recipient signing configuration.

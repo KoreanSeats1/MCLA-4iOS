@@ -121,3 +121,9 @@ Pair your controller through iOS, then configure the launcher's Controls panel b
 
 The launcher has save-management actions, including export/import. **Export a backup before changing signing identity, deleting the app, or installing a substantially different build.** Imported backups can replace current saves only after the UI's confirmation. Changing an app's bundle identifier normally creates a different container; deleting the app can remove its game folder and saves. An update installed over the same signed app is preferable to uninstalling first. Do not upload your entire game folder with bug reports.
 
+
+## Export logs after a launch failure
+
+Tap **Export Logs** on the launcher, then choose Save to Files or another share destination. The ZIP includes existing runtime and performance diagnostics plus the device, iOS/app version, settings and current failure report. It excludes game data, saves and caches.
+
+For detailed startup logs, turn **Graphics → Retail Mode OFF**, fully close and reopen MCLA, reproduce the failure, then tap **Export Logs**. The button becomes available again after a failed startup. Retail Mode on still provides a small status report; it cannot recreate detailed logs from an earlier session.

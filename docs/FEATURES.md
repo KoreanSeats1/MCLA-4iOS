@@ -109,3 +109,7 @@ Keep a backup when changing signing identity or deleting the app. A different bu
 Retail Mode bypasses ordinary logs and capture/profiling work. With diagnostics enabled, the graph displays FPS/frame pacing and can start a bounded capture by double tap. Timing, sparse GPU-pass and thermal-pressure evidence are available for development. OS thermal state is not a temperature sensor, and latest-completion GPU samples are not necessarily exact-row measurements.
 
 Version 1.0 retains known shader, road, checkpoint, fade, ride-height and warm-device reports. Real Metal color tests establish the audited fetch paths; they do not prove every effect or location is correct. See [known issues](KNOWN_BUGS.md) and the [release validation record](releases/1.0-validation.md).
+
+## Export Logs
+
+The launcher’s **Export Logs** button creates a ZIP and opens the iOS share sheet, including Save to Files. It is available before gameplay and after a failed startup. It includes runtime logs/status, performance diagnostic text files, render/control reports and a device/version/settings/failure summary. Game files, saves and caches are excluded. Turn **Graphics → Retail Mode OFF** and reopen the app before reproducing an issue that needs detailed runtime logs.

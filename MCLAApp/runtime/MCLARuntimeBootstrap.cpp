@@ -59,7 +59,7 @@ PPCFunc* gOriginalEntry = nullptr;
 void SetStatus(std::string status) {
     std::lock_guard lock(gStatusMutex);
     gStatus = std::move(status);
-    if (mcla::DiagnosticsEnabled() && !gStatusPath.empty()) {
+    if (!gStatusPath.empty()) {
         std::ofstream output(gStatusPath, std::ios::trunc);
         output << gStatus << '\n';
     }

@@ -7,6 +7,7 @@
 @property(nonatomic, readonly) UIButton* graphicsButton;
 @property(nonatomic, readonly) UIButton* controlsButton;
 @property(nonatomic, readonly) UIButton* savesButton;
+@property(nonatomic, readonly) UIButton* logsButton;
 @property(nonatomic, readonly) UILabel* statusLabel;
 @property(nonatomic, readonly) UILabel* detailLabel;
 @property(nonatomic, assign) BOOL launchReady;

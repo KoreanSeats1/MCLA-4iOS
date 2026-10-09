@@ -185,6 +185,7 @@ static void AddPalm(SCNNode* parent, float x, float z, float height) {
 @property(nonatomic,strong) UIButton* graphicsButton;
 @property(nonatomic,strong) UIButton* controlsButton;
 @property(nonatomic,strong) UIButton* savesButton;
+@property(nonatomic,strong) UIButton* logsButton;
 @property(nonatomic,strong) UILabel* statusLabel;
 @property(nonatomic,strong) UILabel* detailLabel;
 @property(nonatomic,assign) NSInteger selection;
@@ -277,6 +278,8 @@ static void AddPalm(SCNNode* parent, float x, float z, float height) {
     _controlsButton.accessibilityIdentifier=@"mcla.controls";
     _savesButton=[self command:@"Save Management" symbol:@"externaldrive" tag:3];
     _savesButton.accessibilityIdentifier=@"mcla.saves";
+    _logsButton=[self command:@"Export Logs" symbol:@"doc.zipper" tag:4];
+    _logsButton.accessibilityIdentifier=@"mcla.logs";
     _statusLabel=[self label:@"CHECKING GARAGE" size:10 weight:UIFontWeightSemibold];
     _statusLabel.font=[UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightSemibold];
     _detailLabel=[self label:@"" size:12 weight:UIFontWeightRegular];
@@ -474,8 +477,9 @@ static void AddPalm(SCNNode* parent, float x, float z, float height) {
     CGFloat secondaryWidth=(menuWidth-10)/2;
     self.graphicsButton.frame=CGRectMake(left,launchY+rowHeight+10,secondaryWidth,rowHeight);
     self.controlsButton.frame=CGRectMake(left+secondaryWidth+10,launchY+rowHeight+10,secondaryWidth,rowHeight);
-    self.savesButton.frame=CGRectMake(left,launchY+rowHeight*2+20,menuWidth,rowHeight);
-    for(UIButton* b in @[self.graphicsButton,self.controlsButton]) {
+    self.savesButton.frame=CGRectMake(left,launchY+rowHeight*2+20,secondaryWidth,rowHeight);
+    self.logsButton.frame=CGRectMake(left+secondaryWidth+10,launchY+rowHeight*2+20,secondaryWidth,rowHeight);
+    for(UIButton* b in @[self.graphicsButton,self.controlsButton,self.savesButton,self.logsButton]) {
         UIButtonConfiguration* c=b.configuration;
         c.contentInsets=NSDirectionalEdgeInsetsMake(12,12,12,12);
         c.imagePadding=8;
@@ -558,7 +562,7 @@ static void AddPalm(SCNNode* parent, float x, float z, float height) {
     self.cameraPitch=MAX(-.6,MIN(.6,self.cameraPitch-y*.02));
 }
 - (void)updateSelection {
-    NSArray<UIButton*>* commands=@[self.launchButton,self.graphicsButton,self.controlsButton,self.savesButton];
+    NSArray<UIButton*>* commands=@[self.launchButton,self.graphicsButton,self.controlsButton,self.savesButton,self.logsButton];
     for(UIButton* b in commands) {
         BOOL focused=b.tag==self.selection;
         BOOL primary=b.tag==0;
@@ -571,11 +575,11 @@ static void AddPalm(SCNNode* parent, float x, float z, float height) {
 }
 - (void)moveSelection:(NSInteger)direction {
     if(self.launching) return;
-    self.selection=(self.selection+direction+4)%4;
+    self.selection=(self.selection+direction+5)%5;
     [self updateSelection];
 }
 - (void)activateSelection {
-    UIButton* button=@[self.launchButton,self.graphicsButton,self.controlsButton,self.savesButton][self.selection];
+    UIButton* button=@[self.launchButton,self.graphicsButton,self.controlsButton,self.savesButton,self.logsButton][self.selection];
     if(button.enabled) [button sendActionsForControlEvents:UIControlEventTouchUpInside];
 }
 - (void)setControllerConnected:(BOOL)connected {
@@ -593,7 +597,7 @@ static void AddPalm(SCNNode* parent, float x, float z, float height) {
     if(_launching==launching) return;
     _launching=launching;
     self.graphicsButton.enabled=!launching; self.controlsButton.enabled=!launching;
-    self.savesButton.enabled=!launching;
+    self.savesButton.enabled=!launching; self.logsButton.enabled=!launching;
     self.launchButton.enabled=self.launchReady && !launching;
     UIButtonConfiguration* c=self.launchButton.configuration;
     c.title=launching?@"Opening the city…":@"Enter Los Angeles";
