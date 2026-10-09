@@ -1,12 +1,16 @@
 <p align="center"><img src="docs/images/app-icon.png" width="160" alt="MCLA 4iOS app icon"></p>
 <h1 align="center">MCLA 4iOS</h1>
 <p align="center"><strong><a href="https://youtu.be/zmHd-WfsaX4">▶ Watch my MCLA gameplay on YouTube</a></strong></p>
-<p align="center">Midnight Club: Los Angeles — Complete Edition on iPhone and iPad<br><strong>Version 1.0.3</strong></p>
-<p align="center"><a href="https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.3">Download IPA</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="docs/FEATURES.md">UI and feature guide</a> · <a href="docs/KNOWN_BUGS.md">Known issues</a></p>
+<p align="center">Midnight Club: Los Angeles — Complete Edition on iPhone and iPad<br><strong>Version 1.0.4</strong></p>
+<p align="center"><a href="https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.4">Download IPA</a> · <a href="CHANGELOG.md">Changelog</a> · <a href="docs/FEATURES.md">UI and feature guide</a> · <a href="docs/KNOWN_BUGS.md">Known issues</a></p>
 
 An unofficial iOS adaptation built on LARecomp, ReXGlue and the Theft4 Apple foundation. The app combines ahead-of-time ARM64 execution with a title-specific native Metal renderer, a custom UIKit launcher, editable touch controls, tilt steering and physical controllers.
 
-**No original game files are included. You need your own extracted Xbox 360 Complete Edition copy.** Version 1.0.3 is a release milestone; the [known issues](docs/KNOWN_BUGS.md) still apply.
+**No original game files are included. You need your own extracted Xbox 360 Complete Edition copy.** Version 1.0.4 is a release milestone; the [known issues](docs/KNOWN_BUGS.md) still apply.
+
+## What's new in 1.0.4
+
+Startup compatibility hotfix: rebuild FSR and all 603 title Metal shader libraries with an explicit **iOS 18.0 minimum**. Earlier shader builds inherited iOS 27 from the development SDK and could stop at **Xbox/AOT runtime setup failed** on older systems. Release packaging now rejects shader targets newer than the app minimum. Export Logs remains included. See [1.0.4 release notes](docs/releases/1.0.4.md).
 
 ## What's new in 1.0.3
 
@@ -56,7 +60,7 @@ Playable performance is expected on iPhone 15 Pro or newer, but devices outside 
 
 ### 1. Install the IPA
 
-1. Download **MCLA-4iOS-1.0.3.ipa** from the [1.0.3 release assets](https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.3).
+1. Download **MCLA-4iOS-1.0.4.ipa** from the [1.0.4 release assets](https://github.com/KoreanSeats1/MCLA-4iOS/releases/tag/v1.0.4).
 2. Re-sign and install with [Sideloadly](https://sideloadly.io/) or [AltStore Classic](https://faq.altstore.io/altstore-classic/how-to-install-altstore-macos), using your own Apple account.
 3. Follow the installer's trust and Developer Mode instructions if required.
 4. Open MCLA once so it creates its game-data folder, then close it before transferring the game.

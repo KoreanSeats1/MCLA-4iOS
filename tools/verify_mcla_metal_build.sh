@@ -3,6 +3,7 @@ set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 app="$root/out/build/ios-device-release/Release-iphoneos/MCLAApp.app"
 test -f "$app/MCLAApp"
+python3 "$root/tools/verify_mcla_metal_targets.py" "$app"
 library_count=$(find "$app/MCLAMetalShaders" -name '*.metallib' | wc -l | tr -d ' ')
 expected_count=$(rg -c '^\{0x' "$root/MCLAApp/generated/mcla_metal_shader_info.h")
 if test "$library_count" != "$expected_count"; then

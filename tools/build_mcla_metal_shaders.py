@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+from mcla_metal_target import METAL_CACHE_POLICY, METAL_DEPLOYMENT_FLAGS, validate_library
 
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
@@ -141,20 +142,24 @@ def compile_shader(path):
     src = OUT / (path.stem + '.metal')
     air = OUT / (path.stem + '.air')
     lib = OUT / (path.stem + '.metallib')
-    digest = hashlib.sha256(('mcla-metal-v1\n' + text).encode()).hexdigest()
+    digest = hashlib.sha256((METAL_CACHE_POLICY + text).encode()).hexdigest()
     stamp = OUT / (path.stem + '.sha256')
     if not (lib.exists() and stamp.exists() and stamp.read_text() == digest):
         src.write_text(text)
         args = ['xcrun', '-sdk', 'iphoneos', 'metal', '-w', '-O2',
                 '-fmodules-cache-path=/private/tmp/mcla-metal-module-cache',
-                '-std=metal3.1', '-D__air__', '-DGTA4_RECOMP']
+                '-std=metal3.1', *METAL_DEPLOYMENT_FLAGS, '-D__air__', '-DGTA4_RECOMP']
         if stage == 'ps': args.append('-DXENOS_RECOMP_PIXEL_SHADER')
         result = subprocess.run(args + ['-c', str(src), '-o', str(air)], env=ENV, capture_output=True, text=True)
         if result.returncode == 0:
-            result = subprocess.run(['xcrun', '-sdk', 'iphoneos', 'metal', str(air), '-o', str(lib)], env=ENV, capture_output=True, text=True)
+            result = subprocess.run(['xcrun', '-sdk', 'iphoneos', 'metal', *METAL_DEPLOYMENT_FLAGS, str(air), '-o', str(lib)], env=ENV, capture_output=True, text=True)
         (OUT / (path.stem + '.log')).write_text(result.stdout + result.stderr)
         if result.returncode: return {'shader': path.stem, 'error': result.stderr[:2000]}
         stamp.write_text(digest)
+    try:
+        validate_library(lib.read_bytes())
+    except ValueError as error:
+        return {'shader': path.stem, 'error': str(error)}
     mask = 0
     for slot in set(re.findall(r's(\d+)_Texture(?:2D|3D|Cube)DescriptorIndex', text)):
         mask |= 1 << int(slot)

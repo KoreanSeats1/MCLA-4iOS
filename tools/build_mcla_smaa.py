@@ -10,6 +10,7 @@ import os
 import re
 import struct
 import subprocess
+from mcla_metal_target import METAL_DEPLOYMENT_FLAGS, validate_library
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "theft4-foundation/glue/rexglue-sdk-main/src/graphics/gta4_native/smaa/smaa_shaders.inc"
@@ -39,12 +40,13 @@ for array, entry in (
         "--rename-entry-point", "main", entry, "frag", "--output", str(metal),
     ], check=True)
     subprocess.run([
-        "xcrun", "-sdk", "iphoneos", "metal", "-std=metal3.1", "-O2",
+        "xcrun", "-sdk", "iphoneos", "metal", "-std=metal3.1", "-O2", *METAL_DEPLOYMENT_FLAGS,
         "-fmodules-cache-path=/private/tmp/mcla-metal-module-cache",
         "-c", str(metal), "-o", str(air),
     ], check=True, env=ENV)
     airs.append(str(air))
 
-subprocess.run(["xcrun", "-sdk", "iphoneos", "metal", *airs,
+subprocess.run(["xcrun", "-sdk", "iphoneos", "metal", *METAL_DEPLOYMENT_FLAGS, *airs,
                 "-o", str(OUT / "MCLASmaa.metallib")], check=True, env=ENV)
+validate_library((OUT / "MCLASmaa.metallib").read_bytes())
 print("Compiled high-quality canonical SMAA edge/weight/neighborhood shaders for Metal Lab.")

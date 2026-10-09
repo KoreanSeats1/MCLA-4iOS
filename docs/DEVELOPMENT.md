@@ -1,4 +1,4 @@
-# Developer guide — 1.0.3
+# Developer guide — 1.0.4
 
 ## Layout and exact dependency revisions
 
@@ -60,6 +60,8 @@ A launcher-only simulator can be configured with `MCLA_RUNTIME_ENABLED=OFF`, but
 
 `sh tools/run_portable_tests.sh` runs the standalone CPU regressions. They exercise compact state equivalence, constant/state reuse, endian/fixup behavior, sizing/resolves, texture identity/invalidation, cache ownership, input transitions, timing and overlay classification. Tests requiring game-derived artifacts or external runtime headers are not silently substituted with fake inputs.
 
+`python3 tools/test_mcla_metal_targets.py` compiles real offline libraries and checks the deployment gate. Every offline Metal compile and link uses the shared iOS 18.0 flag in `tools/mcla_metal_target.py`. Title-shader stamps include this policy; changing the target forces regeneration. `verify_mcla_metal_targets.py` checks embedded AIR target triples against the packaged `MinimumOSVersion`; both build verification and release packaging call it. An SDK version by itself does not establish the deployment target.
+
 Metal `.mm` tests need Foundation/Metal and an actual usable Mac Metal device. For example:
 
 ```sh
@@ -89,7 +91,7 @@ Highest priorities: recover the missing programs, expand validation of corrected
 The CMake project version controls the marketing version; the tracked build number is separate. Regenerate the Xcode project before building after changing either. Keep installed app signing intact and stage a copy for recipient re-signing:
 
 ```sh
-python3 tools/package_beta.py --version 1.0.3 --output releases/1.0.3
+python3 tools/package_beta.py --version 1.0.4 --output releases/1.0.4
 ```
 
 The packager verifies the device app and ARM64 architecture, checks the expected 603-library inventory, excludes original-game/private-signing files, adds licenses/notices, ad-hoc signs the staged copy, tests ZIP integrity and writes SHA-256 sums plus a source-commit manifest. It does not export an App Store archive or grant recipients a provisioning profile. Versioned release notes and validation live under `docs/releases/`.

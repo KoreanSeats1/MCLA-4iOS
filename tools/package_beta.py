@@ -8,6 +8,7 @@ import plistlib
 import shutil
 import subprocess
 import zipfile
+from verify_mcla_metal_targets import verify_app
 
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN = {'.xex', '.rpf', '.iso', '.bik', '.mobileprovision', '.p12', '.p8', '.pem', '.key', '.cer'}
@@ -41,6 +42,7 @@ def main():
     info = plistlib.loads((app/'Info.plist').read_bytes())
     if info['CFBundleShortVersionString'] != args.version:
         raise RuntimeError(f'Expected version {args.version}')
+    verify_app(app)
     executable = app/info['CFBundleExecutable']
     subprocess.run(['codesign', '--verify', '--strict', str(app)], check=True)
     subprocess.run(['lipo', '-verify_arch', 'arm64', str(executable)], check=True)

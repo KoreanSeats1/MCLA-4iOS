@@ -5,6 +5,7 @@ SPIRV-Cross is a build tool only; the app loads plain Metal libraries.
 from pathlib import Path
 import os, subprocess
 from mcla_fsr_optimize import optimize_easu
+from mcla_metal_target import METAL_DEPLOYMENT_FLAGS, validate_library
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'artifacts/mcla-metal-upscale'
 OUT.mkdir(parents=True,exist_ok=True)
@@ -22,9 +23,10 @@ for part,entry in [('easu','mclaFsrEasu'),('rcas','mclaFsrRcas')]:
     if part=='easu':code=optimize_easu(code)
     source.write_text('// AMD FSR 1, offline cross-compiled from the isolated ReXGlue reference.\n'
         '// Copyright AMD 2021; Xenia shader integration Ben Vanik 2022. See MCLAFsr-LICENSE.txt.\n'+code)
-    subprocess.run(['xcrun','-sdk','iphoneos','metal','-std=metal3.1','-O2',
+    subprocess.run(['xcrun','-sdk','iphoneos','metal','-std=metal3.1','-O2',*METAL_DEPLOYMENT_FLAGS,
         '-fmodules-cache-path=/private/tmp/mcla-metal-module-cache',
         '-c',str(source),'-o',str(air)],check=True,env=ENV)
     airs.append(str(air))
-subprocess.run(['xcrun','-sdk','iphoneos','metal',*airs,'-o',str(OUT/'MCLAFsr.metallib')],check=True,env=ENV)
+subprocess.run(['xcrun','-sdk','iphoneos','metal',*METAL_DEPLOYMENT_FLAGS,*airs,'-o',str(OUT/'MCLAFsr.metallib')],check=True,env=ENV)
+validate_library((OUT/'MCLAFsr.metallib').read_bytes())
 print('Compiled AMD FSR 1 EASU + RCAS as an offline Metal library.')

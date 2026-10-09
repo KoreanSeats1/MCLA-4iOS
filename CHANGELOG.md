@@ -2,6 +2,16 @@
 
 Release entries describe shipped behavior and validation separately. Version numbers do not imply that every original-game effect, device or race has been verified.
 
+## 1.0.4 — 2026-10-09
+
+Metal deployment-target hotfix. Marketing version 1.0.4, build 6, tag `v1.0.4`.
+
+- Diagnose a reported startup failure as an unsupported FSR Metal library deployment target, followed by GPU setup failure and the generic Xbox/AOT error.
+- Set an explicit iOS 18.0 minimum when compiling and linking FSR, title and optional SMAA shader libraries. The previous scripts inherited iOS 27 from the installed SDK.
+- Rebuild FSR and all 603 title libraries; include the target policy in shader-cache stamps so old SDK-default libraries cannot be reused.
+- Reject any packaged Metal library targeting an OS newer than the app’s minimum. Add a real-compiler regression for the omitted-target failure.
+- Retain Export Logs from 1.0.3. See [release notes](docs/releases/1.0.4.md) and [validation](docs/releases/1.0.4-validation.md); recipient physical-device confirmation remains pending.
+
 ## 1.0.3 — 2026-10-09
 
 Diagnostic export update. Marketing version 1.0.3, build 5, tag `v1.0.3`.
